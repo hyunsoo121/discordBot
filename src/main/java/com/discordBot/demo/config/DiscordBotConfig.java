@@ -1,6 +1,7 @@
 package com.discordBot.demo.config;
 
 import com.discordBot.demo.listener.DiscordBotListener;
+import com.discordBot.demo.listener.SlashCommandListener;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.entities.Activity;
@@ -20,8 +21,10 @@ public class DiscordBotConfig {
         JDA jda = JDABuilder.createDefault(token)
                 .setActivity(Activity.playing("메세지 기다리는중!"))
                 .enableIntents(GatewayIntent.MESSAGE_CONTENT)
-                .addEventListeners(new DiscordBotListener())
-                .addEventListeners(new)
+                .addEventListeners(
+                        new DiscordBotListener(),
+                        new SlashCommandListener()
+                )
                 .build();
 
          jda.awaitReady();
