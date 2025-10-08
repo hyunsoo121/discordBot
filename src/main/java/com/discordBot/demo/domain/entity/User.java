@@ -2,15 +2,14 @@ package com.discordBot.demo.domain.entity;
 
 import jakarta.persistence.*;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Getter
 @Setter
-@NoArgsConstructor
 @Table(name = "USER")
 public class User {
 
@@ -24,9 +23,11 @@ public class User {
     @Column(name = "username", nullable = false, length = 100)
     private String username;
 
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<LolNickname> nicknames;
-
-    @OneToMany(mappedBy = "user")
-    private List<UserGuild> userGuilds;
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "USER_GUILD",
+            joinColumns = @JoinColumn(name = "user_id"),
+            inverseJoinColumns = @JoinColumn(name = "server_id")
+    )
+    private Set<GuildServer> guildServers = new HashSet<>();
 }
