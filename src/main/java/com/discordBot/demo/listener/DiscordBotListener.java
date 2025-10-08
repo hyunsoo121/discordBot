@@ -1,15 +1,20 @@
 package com.discordBot.demo.listener;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
 
 @Slf4j
+@Component
+@RequiredArgsConstructor
 public class DiscordBotListener extends ListenerAdapter {
     @Override
     public void onMessageReceived(MessageReceivedEvent event) {
