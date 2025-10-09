@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Entity
@@ -32,5 +33,10 @@ public class MatchRecord {
     private String winnerTeam;
 
     @OneToMany(mappedBy = "matchRecord", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<PlayerStats> playerStats;
+    private List<PlayerStats> playerStats = new ArrayList<>();
+
+    public void addPlayerStats(PlayerStats stats) {
+        this.playerStats.add(stats);
+        stats.setMatchRecord(this);
+    }
 }

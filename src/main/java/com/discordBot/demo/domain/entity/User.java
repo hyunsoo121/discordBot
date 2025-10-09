@@ -4,7 +4,9 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Entity
@@ -20,8 +22,8 @@ public class User {
     @Column(name = "discord_user_id", unique = true, nullable = false)
     private Long discordUserId;
 
-    @Column(name = "username", nullable = false, length = 100)
-    private String username;
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<LolAccount> lolAccounts = new HashSet<>();
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
@@ -30,4 +32,9 @@ public class User {
             inverseJoinColumns = @JoinColumn(name = "server_id")
     )
     private Set<GuildServer> guildServers = new HashSet<>();
+
+    public void addLolAccount(LolAccount account) {
+        this.lolAccounts.add(account);
+        account.setUser(this);
+    }
 }
