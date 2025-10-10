@@ -1,13 +1,11 @@
-// com.discordBot.demo.listener.SlashCommandListener.java (수정 완료)
-
 package com.discordBot.demo.listener;
 
 import com.discordBot.demo.service.UserService;
 import com.discordBot.demo.discord.handler.MatchImageHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import net.dv8tion.jda.api.Permission; // 권한 확인을 위해 추가
-import net.dv8tion.jda.api.entities.Member; // 유저 멤버 객체 사용을 위해 추가
+import net.dv8tion.jda.api.Permission;
+import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.events.guild.GuildReadyEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
@@ -15,6 +13,7 @@ import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
+import net.dv8tion.jda.api.interactions.commands.build.OptionData; // ⭐ OptionData 임포트 추가
 import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import org.springframework.stereotype.Component;
 
@@ -39,7 +38,7 @@ public class SlashCommandListener extends ListenerAdapter {
     public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
 
         switch (event.getName()){
-            case "register": // ⭐ /admin-register 명령어 추가
+            case "register": // '/register'로 라우팅
                 handleRegisterCommand(event);
                 break;
 
@@ -61,19 +60,22 @@ public class SlashCommandListener extends ListenerAdapter {
         }
     }
 
-    // --- 2. 버튼 상호작용 라우팅 (변경 없음) ---
+    // --- 2. 버튼 상호작용 라우팅 ---
     @Override
     public void onButtonInteraction(ButtonInteractionEvent event) {
         String componentId = event.getComponentId();
 
+        // MatchImageHandler의 버튼 ID 접두사를 확인하여 위임
         if (componentId.startsWith(MatchImageHandler.BUTTON_ID_CONFIRM) ||
                 componentId.startsWith(MatchImageHandler.BUTTON_ID_CANCEL)) {
 
+            // 버튼 클릭 시 로딩 상태를 표시
             event.deferEdit().queue();
             imageHandler.handleFinalConfirmation(event);
         }
     }
 
+    // 3. handleRegisterCommand: 관리자 권한 체크 및 대리 등록 로직 수행
     private void handleRegisterCommand(SlashCommandInteractionEvent event) {
 
         // 1. 관리자 권한 확인 (가장 중요)
@@ -116,7 +118,7 @@ public class SlashCommandListener extends ListenerAdapter {
             event.getHook().sendMessage(resultMessage).queue();
 
         } catch (Exception e) {
-            log.error("롤 닉네임 등록 중 에러 발생: {}", e.getMessage(), e);
+            log.error("관리자 롤 닉네임 등록 중 에러 발생: {}", e.getMessage(), e);
             // 사용자 정의 예외 메시지(UserService에서 던진)를 그대로 전달
             event.getHook().sendMessage(e.getMessage().startsWith("❌ 오류:") ? e.getMessage() : "❌ 서버 처리 중 예기치 않은 오류가 발생했습니다.").queue();
         }
@@ -128,20 +130,33 @@ public class SlashCommandListener extends ListenerAdapter {
     public void onGuildReady(GuildReadyEvent event) {
         List<CommandData> commandDataList = new ArrayList<>();
 
+        // 1. '/register' 명령 이름만 사용하며 관리자 전용 옵션을 유지
         commandDataList.add(
-                Commands.slash("register", "특정 유저의 롤 닉네임(Riot ID)을 연결합니다.")
-                        .addOption(OptionType.USER, "target-user", "롤 계정을 연결할 디스코드 유저를 @멘션하세요.", true) // 대상 유저 옵션 추가
+                Commands.slash("register", "관리자 전용: 특정 유저의 롤 닉네임(Riot ID)을 연결합니다.")
+                        .addOption(OptionType.USER, "target-user", "롤 계정을 연결할 디스코드 유저를 @멘션하세요.", true)
                         .addOption(OptionType.STRING, "lol-nickname", "롤 닉네임과 태그를 '이름#태그' 형식으로 입력하세요 (예: Hide On Bush#KR1)", true)
         );
 
-        // 2. /match-upload 명령어 등록 (변경 없음)
+        // 2. /match-upload 명령어 등록 (승리팀 옵션 수정)
+
+        // ⭐ OptionData를 사용하여 Choice를 옵션에 직접 추가합니다.
+        OptionData winnerTeamOption = new OptionData(
+                OptionType.STRING,
+                "winner-team",
+                "승리팀을 선택하세요.",
+                true
+        )
+                .addChoice("RED 팀 승리", "RED")
+                .addChoice("BLUE 팀 승리", "BLUE");
+
         commandDataList.add(
                 Commands.slash("match-upload", "경기 결과 이미지로 기록을 등록합니다.")
-                        .addOption(OptionType.STRING, "winner-team", "승리팀을 입력하세요 (RED/BLUE)", true)
+                        // OptionData를 addOptions로 추가합니다.
+                        .addOptions(winnerTeamOption)
                         .addOption(OptionType.ATTACHMENT, "result-image", "경기 결과 스크린샷 이미지", true)
         );
 
-        // 3. 나머지 명령어 (변경 없음)
+        // 3. 나머지 명령어 등록
         commandDataList.add(
                 Commands.slash("my-info", "내 정보를 보여줍니다")
         );

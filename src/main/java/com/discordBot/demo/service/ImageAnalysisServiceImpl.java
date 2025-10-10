@@ -2,6 +2,7 @@ package com.discordBot.demo.service;
 
 import com.discordBot.demo.domain.dto.MatchRegistrationDto;
 import com.discordBot.demo.domain.dto.PlayerStatsDto;
+import com.discordBot.demo.domain.entity.LolAccount; // LolAccount 엔티티 임포트
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 // Google GenAI SDK v1.8.0 import
@@ -35,7 +36,6 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
     private final OkHttpClient httpClient;
 
     public ImageAnalysisServiceImpl(@Value("${spring.gemini.api.key}") String apiKey) {
-        // Client 초기화: Client 빌더에서 apiKey() 메서드를 사용
         this.geminiClient = Client.builder()
                 .apiKey(apiKey)
                 .build();
@@ -48,15 +48,24 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
         public List<PlayerStatsDto> players;
     }
 
-
     @Override
-    public MatchRegistrationDto analyzeAndStructureData(String imageUrl, String winnerTeam, Long serverId) throws Exception {
+    public MatchRegistrationDto analyzeAndStructureData(String imageUrl, String winnerTeam, Long serverId, List<LolAccount> registeredAccounts) throws Exception {
 
         // 1. 이미지 URL에서 바이트 배열 다운로드
         byte[] imageBytes = downloadImageBytes(imageUrl);
 
-        // 2. 프롬프트 및 시스템 설정 정의
-        String prompt = "Please extract the stats for all 10 players from the League of Legends match result screen image. Extract 'gameName', 'tagLine', 'team' (RED/BLUE), 'kills', 'deaths', and 'assists'. If the team is not visible, infer it based on the image's layout (usually left is one team, right is the other). The user specified the winner team is " + winnerTeam + ".";
+        // ⭐⭐⭐ 2. 프롬프트에 OCR 힌트 목록 추가 ⭐⭐⭐
+        String hintList = registeredAccounts.stream()
+                .map(LolAccount::getFullAccountName) // "Faker#KR1" 형태의 전체 이름 리스트 생성
+                .collect(Collectors.joining(", "));
+
+        String prompt = String.format(
+                "Please extract the stats for all 10 players from the League of Legends match result screen image. Extract 'gameName', 'tagLine', 'team' (RED/BLUE), 'kills', 'deaths', and 'assists'. If the team is not visible, infer it based on the image's layout. The user specified the winner team is %s. " +
+                        "**IMPORTANT**: The players' Riot IDs in the image are highly likely to be one of the following registered accounts: [%s]. Use this list to correct any OCR errors and accurately report the gameName and tagLine.",
+                winnerTeam, hintList
+        );
+        // ⭐⭐⭐ 힌트 추가 끝 ⭐⭐⭐
+
 
         String systemInstructionString = "You are an expert esports match data extraction AI. Your response must be in strict, valid JSON format matching the structure: {\"players\": [{\"gameName\":\"string\", \"tagLine\":\"string\", \"team\":\"string (RED or BLUE)\", \"kills\":\"integer\", \"deaths\":\"integer\", \"assists\":\"integer\"}, ...]}. Do not include any introductory or explanatory text outside the JSON block. Ensure 10 players are returned.";
 
@@ -83,12 +92,11 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
         GenerateContentResponse response = geminiClient.models
                 .generateContent(modelName, contents, config);
 
-        // 6. 응답 파싱 및 안전한 Optional 처리 ⭐⭐⭐
+        // 6. 응답 파싱 및 안전한 Optional 처리
         if (response == null || !response.candidates().isPresent() || response.candidates().get().isEmpty()) {
             throw new Exception("Gemini API에서 유효한 응답을 받지 못했습니다.");
         }
 
-        // Optional 체이닝을 사용하여 안전하게 텍스트를 추출
         String rawResponseText = response.candidates().get().stream()
                 .findFirst()
                 .flatMap(candidate -> candidate.content())
@@ -97,12 +105,10 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                 .flatMap(part -> part.text())
                 .orElseThrow(() -> new Exception("Gemini API 응답에서 JSON 문자열을 찾을 수 없습니다. (응답 구조 오류)"));
 
-        // ⭐⭐⭐ 핵심 수정 부분 ⭐⭐⭐
         String jsonString = rawResponseText
-                .replace("```json", "") // 마크다운 시작 백틱 + 언어 키워드 제거
-                .replace("```", "")     // 마크다운 종료 백틱 제거
-                .trim();                // 앞뒤 공백 및 줄바꿈 제거
-        // ⭐⭐⭐ 수정 끝 ⭐⭐⭐
+                .replace("```json", "")
+                .replace("```", "")
+                .trim();
 
         JsonExtractionResult extractionResult = objectMapper.readValue(jsonString, JsonExtractionResult.class);
 
@@ -132,8 +138,6 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
     }
 
     private PlayerStatsDto mapToPlayerStatsDto(PlayerStatsDto extracted, String winnerTeam) {
-        // AI가 추출한 데이터는 그대로 반환합니다.
-        // Discord ID는 AI가 알 수 없으므로, 이 값은 서비스 로직에서 유효성 검증 시 DB 매핑을 통해 채워져야 합니다.
         return extracted;
     }
 }

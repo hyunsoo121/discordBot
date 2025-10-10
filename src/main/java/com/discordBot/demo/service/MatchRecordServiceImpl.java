@@ -18,9 +18,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import jakarta.persistence.EntityManager;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -30,107 +30,89 @@ public class MatchRecordServiceImpl implements MatchRecordService {
 
     private final MatchRecordRepository matchRecordRepository;
     private final ServerManagementService serverManagementService;
-    private final UserRepository userRepository;
     private final LolAccountRepository lolAccountRepository;
     private final EntityManager em;
-    private final RiotApiService riotApiService;
 
 
     @Override
     public MatchRecord registerMatch(MatchRegistrationDto matchDto) {
 
-        Long discordServerId = matchDto.getServerId(); // Discord ID (DB PK)
+        Long discordServerId = matchDto.getServerId();
 
         serverManagementService.findOrCreateGuildServer(discordServerId);
 
+        // 1. 미등록 계정 목록을 저장할 리스트 초기화
+        List<String> unregisteredAccounts = new ArrayList<>();
+
+        // 2. 모든 PlayerStats에 대해 롤 계정 등록 여부 검증
+        for (PlayerStatsDto playerDto : matchDto.getPlayerStatsList()) {
+
+            String gameName = playerDto.getLolGameName();
+            String tagLine = playerDto.getLolTagLine();
+
+            // TagLine이 없으면 빈 문자열로 표준화 (DB 검색 기준 통일)
+            if (!StringUtils.hasText(tagLine)) {
+                tagLine = "";
+            }
+
+            // DB에서 롤 계정 찾기
+            Optional<LolAccount> lolAccountOpt = lolAccountRepository.findByGameNameAndTagLine(gameName, tagLine);
+
+            if (lolAccountOpt.isEmpty()) {
+                // DB에 없는 계정이 발견됨: 미등록 리스트에 추가
+                unregisteredAccounts.add(gameName + "#" + tagLine);
+            }
+        }
+
+        // 3. 검증 결과 확인: 미등록 계정이 하나라도 있다면 트랜잭션 취소
+        if (!unregisteredAccounts.isEmpty()) {
+            String missingList = String.join(", ", unregisteredAccounts);
+
+            // 사용자에게 오류 메시지와 미등록 계정 목록을 보여줍니다.
+            throw new IllegalArgumentException(
+                    "❌ 오류: DB에 등록되지 않은 롤 계정이 포함되어 있습니다. 먼저 `/admin-register` 명령어로 해당 계정을 등록해 주세요.\n\n" +
+                            "**[미등록 계정 목록]**\n" + missingList
+            );
+            // 이 예외는 SlashCommandListener로 전달되어 트랜잭션을 롤백하고 사용자에게 메시지를 보여줍니다.
+        }
+
+        // 4. 검증 완료: 이제 안전하게 MatchRecord 생성 및 PlayerStats 저장
         MatchRecord matchRecord = new MatchRecord();
         GuildServer proxyGuildServer = em.getReference(GuildServer.class, discordServerId);
 
-        matchRecord.setGuildServer(proxyGuildServer); // Proxy 객체를 외래 키 설정에 사용
+        matchRecord.setGuildServer(proxyGuildServer);
         matchRecord.setWinnerTeam(matchDto.getWinnerTeam());
 
-        matchDto.getPlayerStatsList().stream()
-                .forEach(playerDto -> {
+        matchDto.getPlayerStatsList().forEach(playerDto -> {
+            // 검증이 완료되었으므로, lolAccountOpt는 반드시 Present합니다.
+            String gameName = playerDto.getLolGameName();
+            String tagLine = playerDto.getLolTagLine();
+            if (!StringUtils.hasText(tagLine)) tagLine = "";
 
-                    User user = userRepository.findByDiscordUserId(playerDto.getDiscordUserId())
-                            .orElse(null);
+            // DB에서 계정 정보를 다시 가져옴
+            LolAccount lolAccount = lolAccountRepository.findByGameNameAndTagLine(gameName, tagLine).get();
 
-                    String rawGameName = playerDto.getLolGameName();
+            // 롤 계정에 연결된 디스코드 유저 (없으면 null)
+            User user = lolAccount.getUser();
 
-                    // ⭐⭐⭐ 핵심 수정: GameName 정규화 (모든 공백 및 앞뒤 공백 제거) ⭐⭐⭐
-                    String gameName = rawGameName.trim().replaceAll("\\s+", "");
+            // PlayerStats 생성 및 설정
+            PlayerStats stats = new PlayerStats();
+            stats.setUser(user);
+            stats.setLolNickname(lolAccount);
+            stats.setTeam(playerDto.getTeam());
+            stats.setKills(playerDto.getKills());
+            stats.setDeaths(playerDto.getDeaths());
+            stats.setAssists(playerDto.getAssists());
 
-                    String tagLine = playerDto.getLolTagLine();
+            boolean isWin = playerDto.getTeam().equalsIgnoreCase(matchDto.getWinnerTeam());
+            stats.setIsWin(isWin);
 
-                    // 3-B. LolAccount 찾기 로직
-                    Optional<LolAccount> lolAccountOpt = Optional.empty();
+            matchRecord.addPlayerStats(stats);
+        });
 
-                    if (!StringUtils.hasText(tagLine)) {
-                        tagLine = "";
-                    }
-
-                    if (StringUtils.hasText(tagLine)) {
-                        // 1순위: TagLine이 있다면 정확한 조합으로 찾습니다.
-                        // (정규화된 gameName 사용)
-                        lolAccountOpt = lolAccountRepository.findByGameNameAndTagLine(gameName, tagLine);
-
-                    } else {
-                        // 2순위: TagLine이 없다면, GameName이 같은 모든 계정 중 연결 가능한 것을 찾습니다.
-                        // (정규화된 gameName 사용)
-                        List<LolAccount> accountsWithSameGameName = lolAccountRepository.findByGameName(gameName);
-
-                        // 최우선 순위: TagLine이 채워진 계정 (register된 계정)을 찾습니다.
-                        lolAccountOpt = accountsWithSameGameName.stream()
-                                .filter(account -> StringUtils.hasText(account.getTagLine()))
-                                .findFirst();
-
-                        if (lolAccountOpt.isEmpty()) {
-                            // TagLine이 채워진 계정이 없다면, TagLine이 없는 (매치 등록으로 생성된) 임시 계정을 찾습니다.
-                            lolAccountOpt = accountsWithSameGameName.stream()
-                                    .filter(account -> !StringUtils.hasText(account.getTagLine()))
-                                    .findFirst();
-                        }
-                    }
-                    // 3-B 끝
-
-                    // 3-C. LolAccount 찾기 또는 생성
-                    final String finalTagLine = tagLine;
-                    LolAccount lolAccount;
-
-                    if (lolAccountOpt.isPresent()) {
-                        // 계정이 DB에 존재함: 기존 계정 사용
-                        lolAccount = lolAccountOpt.get();
-                    } else {
-                        // 계정이 DB에 없음: 새로운 계정 생성 및 저장
-
-                        LolAccount newAccount = new LolAccount();
-                        newAccount.setGameName(gameName); // 정규화된 이름으로 저장
-                        newAccount.setTagLine(finalTagLine);
-
-                        newAccount.setUser(user);
-
-                        lolAccount = lolAccountRepository.save(newAccount);
-                    }
-
-
-                    // 3-D. 소유자 검증 (제거됨)
-
-                    // 3-E. PlayerStats 생성 및 설정
-                    PlayerStats stats = new PlayerStats();
-                    stats.setUser(user);
-                    stats.setLolNickname(lolAccount);
-                    stats.setTeam(playerDto.getTeam());
-                    stats.setKills(playerDto.getKills());
-                    stats.setDeaths(playerDto.getDeaths());
-                    stats.setAssists(playerDto.getAssists());
-
-                    boolean isWin = playerDto.getTeam().equalsIgnoreCase(matchDto.getWinnerTeam());
-                    stats.setIsWin(isWin);
-
-                    matchRecord.addPlayerStats(stats);
-                });
-
-        // 4. MatchRecord 저장
+        // 5. MatchRecord 저장
         return matchRecordRepository.save(matchRecord);
     }
+
+    // 이 외의 linkExistingAccount 등의 메서드는 그대로 유지됩니다.
 }
