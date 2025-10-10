@@ -32,7 +32,7 @@ public class ServerManagementServiceImpl implements ServerManagementService {
      * GuildServer를 생성하고 저장하는 트랜잭션 (REQUIRES_NEW).
      * 이 메서드는 findOrCreateGuildServer 트랜잭션과 완전히 분리되어 충돌을 일으키지 않습니다.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public GuildServer createNewGuildServer(Long serverId) {
         log.info("새로운 GuildServer 등록: ID={}", serverId);
         GuildServer newServer = new GuildServer();

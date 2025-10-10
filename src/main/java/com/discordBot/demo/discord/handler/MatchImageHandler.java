@@ -1,6 +1,8 @@
 package com.discordBot.demo.discord.handler;
 
 import com.discordBot.demo.domain.dto.MatchRegistrationDto;
+import com.discordBot.demo.domain.entity.LolAccount;
+import com.discordBot.demo.domain.repository.LolAccountRepository;
 import com.discordBot.demo.service.MatchRecordService;
 import com.discordBot.demo.service.ImageAnalysisService;
 import lombok.RequiredArgsConstructor;
@@ -14,11 +16,11 @@ import net.dv8tion.jda.api.interactions.components.ActionRow;
 import net.dv8tion.jda.api.interactions.components.buttons.Button;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.List;
 
 @Slf4j
 @Component
@@ -27,68 +29,77 @@ public class MatchImageHandler {
 
     private final ImageAnalysisService imageAnalysisService;
     private final MatchRecordService matchRecordService;
+    private final LolAccountRepository lolAccountRepository;
 
-    // Button Constants
+    // 버튼 상수
     public static final String BUTTON_ID_CONFIRM = "match-confirm";
     public static final String BUTTON_ID_CANCEL = "match-cancel";
 
-    // Temporary storage for data awaiting confirmation
+    // 확인 대기 중인 데이터를 위한 임시 저장소
     private final Map<String, MatchRegistrationDto> pendingConfirmations = new ConcurrentHashMap<>();
 
-    // Executor for handling long-running Gemini API calls and DB operations asynchronously
+    // 오래 걸리는 AI 및 DB 작업을 비동기적으로 처리하기 위한 Executor
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
 
 
     /**
-     * Handles the /match-upload command, defers reply, and submits image for AI analysis.
+     * /match-upload 명령어를 처리하고, 응답을 지연시킨 후 이미지 분석을 요청합니다.
      */
     public void handleMatchUploadCommand(SlashCommandInteractionEvent event) {
 
-        // Defer reply immediately (public response) to handle long processing time
+        // 처리 시간이 길어질 것을 대비하여 즉시 응답을 지연시킵니다.
         event.deferReply(false).queue();
 
         OptionMapping winnerTeamOption = event.getOption("winner-team");
         OptionMapping imageOption = event.getOption("result-image");
 
         if (winnerTeamOption == null || imageOption == null) {
-            event.getHook().sendMessage("❌ Error: Both winner team and image file must be provided.").queue();
+            event.getHook().sendMessage("❌ 오류: 승리팀과 이미지 파일을 모두 제공해야 합니다.").queue();
             return;
         }
 
         String winnerTeam = winnerTeamOption.getAsString().toUpperCase();
         Attachment imageAttachment = imageOption.getAsAttachment();
         String initiatorId = event.getUser().getId();
+        Long serverId = event.getGuild().getIdLong(); // ⭐ 현재 서버 ID 획득
 
-        // 1. Basic validation
+        // 1. 기본 유효성 검사
         if (!winnerTeam.equals("RED") && !winnerTeam.equals("BLUE")) {
-            event.getHook().sendMessage("❌ Error: Winner team must be RED or BLUE.").queue();
+            event.getHook().sendMessage("❌ 오류: 승리팀은 RED 또는 BLUE여야 합니다.").queue();
             return;
         }
         if (!imageAttachment.isImage()) {
-            event.getHook().sendMessage("❌ Error: The attached file is not an image.").queue();
+            event.getHook().sendMessage("❌ 오류: 첨부된 파일이 이미지가 아닙니다.").queue();
             return;
         }
 
-        // 2. Initial status update (Hook must be used after deferReply)
-        event.getHook().sendMessage("🔍 Analyzing image. Please wait... (AI processing)").queue();
+        // 2. 초기 상태 업데이트
+        event.getHook().sendMessage("🔍 이미지를 분석 중입니다. 잠시 기다려 주세요... (AI 처리)").queue();
 
-        // 3. Execute long-running AI process on a separate thread
+        // ⭐⭐⭐ 3. 롤 계정 후보 목록 조회 (OCR 힌트 준비) ⭐⭐⭐
+        // DB에 등록된 계정 중 현재 Discord 서버에 연결된 사용자 계정만 가져옵니다.
+        List<LolAccount> allRegisteredAccounts = lolAccountRepository.findAllByGuildServer_DiscordServerId(serverId);
+        log.info("OCR 힌트를 위해 서버 {}에 등록된 계정 {}개를 로드했습니다.", serverId, allRegisteredAccounts.size());
+        // ⭐⭐⭐ OCR 힌트 준비 끝 ⭐⭐⭐
+
+        // 4. 별도의 스레드에서 오래 걸리는 AI 프로세스 실행
         executor.execute(() -> {
             try {
-                // Call image analysis service (Gemini)
+                // imageAnalysisService 호출 시 롤 계정 목록 추가 전달
                 MatchRegistrationDto resultDto = imageAnalysisService.analyzeAndStructureData(
                         imageAttachment.getUrl(),
                         winnerTeam,
-                        event.getGuild().getIdLong()
+                        serverId,
+                        allRegisteredAccounts // ⭐ 필터링된 힌트 목록 전달
                 );
 
-                // Analysis successful: Send confirmation message
+                // 분석 성공: 확인 메시지 전송
                 sendConfirmationMessage(event.getHook(), resultDto, initiatorId);
 
             } catch (Exception e) {
-                log.error("Error during match record processing: {}", e.getMessage(), e);
-                // Edit original message to display error
-                event.getHook().editOriginal("❌ Server Error: An unexpected error occurred during image analysis. Check logs.")
+                log.error("경기 기록 처리 중 오류 발생: {}", e.getMessage(), e);
+                // 오류를 표시하도록 원본 메시지 수정
+                event.getHook().editOriginal("❌ 서버 오류: 이미지 분석 중 예상치 못한 오류가 발생했습니다. 로그를 확인하세요.")
                         .setComponents()
                         .queue();
             }
@@ -96,67 +107,67 @@ public class MatchImageHandler {
     }
 
     /**
-     * Sends the final confirmation message with CONFIRM/CANCEL buttons to the user.
+     * 최종 확인을 위한 CONFIRM/CANCEL 버튼이 포함된 메시지를 사용자에게 전송합니다.
      */
     private void sendConfirmationMessage(InteractionHook hook, MatchRegistrationDto dto, String initiatorId) {
 
-        // 1. Store data temporarily for button handling
+        // 1. 버튼 처리를 위해 데이터를 임시 저장
         pendingConfirmations.put(initiatorId, dto);
 
-        // 2. Create message body
+        // 2. 메시지 본문 생성
         StringBuilder sb = new StringBuilder();
-        sb.append("✅ **AI Analysis Complete!** Is the following record correct? (Only the uploader can confirm)\n\n");
-        sb.append("🏆 Winning Team: **").append(dto.getWinnerTeam()).append("**\n\n");
+        sb.append("✅ **AI 분석 완료!** 아래 기록이 정확합니까? (업로더만 확인할 수 있습니다)\n\n");
+        sb.append("🏆 승리팀: **").append(dto.getWinnerTeam()).append("**\n\n");
 
-        // Summarize player stats
+        // 선수 통계 요약
         dto.getPlayerStatsList().forEach(stats -> {
             sb.append("`").append(stats.getTeam()).append("` | ");
             sb.append(stats.getLolGameName()).append("#").append(stats.getLolTagLine()).append(" | ");
             sb.append("KDA: ").append(stats.getKills()).append("/").append(stats.getDeaths()).append("/").append(stats.getAssists()).append("\n");
         });
 
-        // 3. Create buttons (with initiator ID for permission check)
-        Button confirmButton = Button.success(BUTTON_ID_CONFIRM + ":" + initiatorId, "✅ Final Registration");
-        Button cancelButton = Button.danger(BUTTON_ID_CANCEL + ":" + initiatorId, "❌ Cancel / Modify");
+        // 3. 버튼 생성 (권한 확인을 위해 업로더 ID 포함)
+        Button confirmButton = Button.success(BUTTON_ID_CONFIRM + ":" + initiatorId, "✅ 최종 등록");
+        Button cancelButton = Button.danger(BUTTON_ID_CANCEL + ":" + initiatorId, "❌ 취소 / 수정");
 
-        // 4. Edit original message using Hook, adding buttons
+        // 4. Hook을 사용하여 원본 메시지 수정 및 버튼 추가
         hook.editOriginal(sb.toString())
                 .setComponents(ActionRow.of(confirmButton, cancelButton))
                 .queue();
     }
 
     /**
-     * Handles the button click event for final confirmation or cancellation.
+     * 최종 확인 또는 취소를 위한 버튼 클릭 이벤트를 처리합니다.
      */
     public void handleFinalConfirmation(ButtonInteractionEvent event) {
 
-        // 1. Get IDs and button action
+        // 1. ID 및 버튼 동작 가져오기
         String componentId = event.getComponentId();
         String[] parts = componentId.split(":");
         String buttonAction = parts[0];
         String requiredInitiatorId = parts[1];
         String actualInitiatorId = event.getUser().getId();
 
-        // NOTE: event.deferEdit() is called in SlashCommandListener.
+        // NOTE: event.deferEdit()는 SlashCommandListener에서 호출됩니다.
 
-        // Permission check
+        // 권한 확인
         if (!requiredInitiatorId.equals(actualInitiatorId)) {
-            event.getHook().sendMessage("❌ Permission Error: Only the original uploader can finalize this record.").setEphemeral(true).queue();
+            event.getHook().sendMessage("❌ 권한 오류: 원본 업로더만 이 기록을 확정할 수 있습니다.").setEphemeral(true).queue();
             return;
         }
 
-        // Retrieve and remove pending data
+        // 대기 중인 데이터 검색 및 제거
         MatchRegistrationDto finalDto = pendingConfirmations.remove(requiredInitiatorId);
 
         if (finalDto == null) {
-            event.getHook().editOriginal("❌ Error: This match session has expired or was already processed.").setComponents().queue();
+            event.getHook().editOriginal("❌ 오류: 이 경기 세션이 만료되었거나 이미 처리되었습니다.").setComponents().queue();
             return;
         }
 
-        // 2. Process button action
+        // 2. 버튼 동작 처리
         if (buttonAction.equals(BUTTON_ID_CONFIRM)) {
 
-            // ⭐⭐⭐ 핵심 수정: DB 저장 로직을 Executor 내부로 이동 ⭐⭐⭐
+            // DB 저장 로직을 Executor 내부로 이동
             event.getHook().editOriginal("💾 DB에 기록을 저장 중입니다...").setComponents().queue(); // 사용자에게 저장 중임을 알림
 
             executor.execute(() -> {
@@ -177,11 +188,10 @@ public class MatchImageHandler {
                     event.getHook().editOriginal("❌ 서버 처리 중 예기치 않은 오류가 발생했습니다.").setComponents().queue();
                 }
             });
-            // ⭐⭐⭐ 수정 끝 ⭐⭐⭐
 
         } else if (buttonAction.equals(BUTTON_ID_CANCEL)) {
-            // Cancellation
-            event.getHook().editOriginal("🚫 Match registration has been cancelled. Please use `/match-upload` again.").setComponents().queue();
+            // 취소
+            event.getHook().editOriginal("🚫 경기 기록 등록이 취소되었습니다. `/match-upload`를 다시 사용해 주세요.").setComponents().queue();
         }
     }
 }
