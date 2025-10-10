@@ -11,11 +11,6 @@ public interface UserService {
     String registerLolNickname(Long discordUserId, String gameName, String tagLine);
 
     /**
-     * GameName이 일치하는 모든 롤 계정 목록을 조회합니다.
-     */
-    List<LolAccount> findAccountsByGameName(String gameName);
-
-    /**
      * ⭐ 신규 추가: DB에 존재하는 LolAccount (accountId)에 Discord User를 연결합니다.
      * @param discordUserId 연결을 요청한 디스코드 유저 ID
      * @param lolAccountId 연결할 롤 계정의 DB ID

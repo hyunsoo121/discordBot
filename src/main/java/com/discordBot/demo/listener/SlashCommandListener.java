@@ -1,9 +1,13 @@
+// com.discordBot.demo.listener.SlashCommandListener.java (수정 완료)
+
 package com.discordBot.demo.listener;
 
 import com.discordBot.demo.service.UserService;
 import com.discordBot.demo.discord.handler.MatchImageHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.dv8tion.jda.api.Permission; // 권한 확인을 위해 추가
+import net.dv8tion.jda.api.entities.Member; // 유저 멤버 객체 사용을 위해 추가
 import net.dv8tion.jda.api.events.guild.GuildReadyEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
@@ -26,7 +30,7 @@ import java.util.regex.Pattern;
 public class SlashCommandListener extends ListenerAdapter {
 
     private final UserService userService;
-    private final MatchImageHandler imageHandler; // ⭐ MatchImageHandler 주입
+    private final MatchImageHandler imageHandler;
 
     private static final Pattern RIOT_ID_PATTERN = Pattern.compile("^(.+)#(.+)$");
 
@@ -35,11 +39,11 @@ public class SlashCommandListener extends ListenerAdapter {
     public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
 
         switch (event.getName()){
-            case "register":
+            case "register": // ⭐ /admin-register 명령어 추가
                 handleRegisterCommand(event);
                 break;
 
-            case "match-upload": // ⭐ /match-upload 명령어 라우팅
+            case "match-upload":
                 imageHandler.handleMatchUploadCommand(event);
                 break;
 
@@ -57,33 +61,39 @@ public class SlashCommandListener extends ListenerAdapter {
         }
     }
 
-    // --- 2. 버튼 상호작용 라우팅 ---
+    // --- 2. 버튼 상호작용 라우팅 (변경 없음) ---
     @Override
     public void onButtonInteraction(ButtonInteractionEvent event) {
         String componentId = event.getComponentId();
 
-        // MatchImageHandler의 버튼 ID 접두사를 확인하여 위임
         if (componentId.startsWith(MatchImageHandler.BUTTON_ID_CONFIRM) ||
                 componentId.startsWith(MatchImageHandler.BUTTON_ID_CANCEL)) {
 
-            // 버튼 클릭 시 로딩 상태를 표시 (첫 번째 응답)
             event.deferEdit().queue();
             imageHandler.handleFinalConfirmation(event);
         }
-        // ... (다른 버튼 이벤트 처리 로직은 여기에 추가) ...
     }
 
-    // --- 3. handleRegisterCommand (기존 유지) ---
     private void handleRegisterCommand(SlashCommandInteractionEvent event) {
 
-        OptionMapping nicknameOption = event.getOption("lol-nickname");
-        if (nicknameOption == null) {
-            event.reply("❌ 오류: 롤 닉네임 옵션을 입력해 주세요.").setEphemeral(true).queue();
+        // 1. 관리자 권한 확인 (가장 중요)
+        Member member = event.getMember();
+        if (member == null || !member.hasPermission(Permission.ADMINISTRATOR)) {
+            event.reply("❌ 오류: 이 명령어는 **서버 관리자**만 사용할 수 있습니다.").setEphemeral(true).queue();
             return;
         }
 
-        String fullNickname = nicknameOption.getAsString();
+        // 2. 옵션 추출
+        OptionMapping targetUserOption = event.getOption("target-user");
+        OptionMapping nicknameOption = event.getOption("lol-nickname");
 
+        if (targetUserOption == null || nicknameOption == null) {
+            event.reply("❌ 오류: 대상 유저와 롤 닉네임 옵션을 모두 입력해 주세요.").setEphemeral(true).queue();
+            return;
+        }
+
+        // 3. Riot ID 형식 검증
+        String fullNickname = nicknameOption.getAsString();
         Matcher matcher = RIOT_ID_PATTERN.matcher(fullNickname);
 
         if (!matcher.matches()) {
@@ -94,19 +104,24 @@ public class SlashCommandListener extends ListenerAdapter {
 
         String gameName = matcher.group(1);
         String tagLine = matcher.group(2);
-        Long discordUserId = event.getUser().getIdLong();
+        // 대상 유저의 ID를 추출 (Discord User 객체에서 ID를 가져옴)
+        Long targetDiscordUserId = targetUserOption.getAsUser().getIdLong();
 
         event.deferReply(true).queue();
 
+        // 4. 서비스 호출
         try {
-            String resultMessage = userService.registerLolNickname(discordUserId, gameName, tagLine);
+            // UserService의 관리자 전용 메서드 호출
+            String resultMessage = userService.registerLolNickname(targetDiscordUserId, gameName, tagLine);
             event.getHook().sendMessage(resultMessage).queue();
 
         } catch (Exception e) {
             log.error("롤 닉네임 등록 중 에러 발생: {}", e.getMessage(), e);
-            event.getHook().sendMessage("❌ 서버 처리 중 예기치 않은 오류가 발생했습니다.").queue();
+            // 사용자 정의 예외 메시지(UserService에서 던진)를 그대로 전달
+            event.getHook().sendMessage(e.getMessage().startsWith("❌ 오류:") ? e.getMessage() : "❌ 서버 처리 중 예기치 않은 오류가 발생했습니다.").queue();
         }
     }
+
 
     // --- 4. onGuildReady (명령어 등록) ---
     @Override
@@ -114,17 +129,19 @@ public class SlashCommandListener extends ListenerAdapter {
         List<CommandData> commandDataList = new ArrayList<>();
 
         commandDataList.add(
-                Commands.slash("register", "롤 닉네임(Riot ID)을 디스코드 계정에 연결합니다.")
+                Commands.slash("register", "특정 유저의 롤 닉네임(Riot ID)을 연결합니다.")
+                        .addOption(OptionType.USER, "target-user", "롤 계정을 연결할 디스코드 유저를 @멘션하세요.", true) // 대상 유저 옵션 추가
                         .addOption(OptionType.STRING, "lol-nickname", "롤 닉네임과 태그를 '이름#태그' 형식으로 입력하세요 (예: Hide On Bush#KR1)", true)
         );
 
-        // ⭐ /match-upload 명령어 등록 (STRING + ATTACHMENT)
+        // 2. /match-upload 명령어 등록 (변경 없음)
         commandDataList.add(
                 Commands.slash("match-upload", "경기 결과 이미지로 기록을 등록합니다.")
                         .addOption(OptionType.STRING, "winner-team", "승리팀을 입력하세요 (RED/BLUE)", true)
                         .addOption(OptionType.ATTACHMENT, "result-image", "경기 결과 스크린샷 이미지", true)
         );
 
+        // 3. 나머지 명령어 (변경 없음)
         commandDataList.add(
                 Commands.slash("my-info", "내 정보를 보여줍니다")
         );

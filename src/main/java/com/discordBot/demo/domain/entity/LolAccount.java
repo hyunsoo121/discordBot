@@ -17,7 +17,7 @@ public class LolAccount {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = true)
+    @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
     // 라이엇 ID의 게임 이름 (예: Hide On Bush)
@@ -25,10 +25,10 @@ public class LolAccount {
     private String gameName;
 
     // 라이엇 ID의 태그 (예: KR1)
-    @Column(name = "tag_line", nullable = true, length = 10)
+    @Column(name = "tag_line", nullable = false, length = 10)
     private String tagLine;
 
-    @Column(name = "puuid", unique = true, nullable = true, length = 78)
+    @Column(name = "puuid", unique = true, nullable = false, length = 78)
     private String puuid;
 
     public String getFullAccountName() {
