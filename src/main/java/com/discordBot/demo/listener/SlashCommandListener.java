@@ -1,17 +1,17 @@
 package com.discordBot.demo.listener;
 
-import com.discordBot.demo.discord.handler.MatchInteractionHandler;
 import com.discordBot.demo.service.UserService;
+import com.discordBot.demo.discord.handler.MatchImageHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.dv8tion.jda.api.events.guild.GuildReadyEvent;
-import net.dv8tion.jda.api.events.interaction.ModalInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
+import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
-import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
+import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -26,10 +26,11 @@ import java.util.regex.Pattern;
 public class SlashCommandListener extends ListenerAdapter {
 
     private final UserService userService;
-    private final MatchInteractionHandler interactionHandler;
+    private final MatchImageHandler imageHandler; // ⭐ MatchImageHandler 주입
 
     private static final Pattern RIOT_ID_PATTERN = Pattern.compile("^(.+)#(.+)$");
 
+    // --- 1. 슬래시 명령어 라우팅 ---
     @Override
     public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
 
@@ -38,8 +39,8 @@ public class SlashCommandListener extends ListenerAdapter {
                 handleRegisterCommand(event);
                 break;
 
-            case "match-register":
-                interactionHandler.handleMatchRegisterCommand(event);
+            case "match-upload": // ⭐ /match-upload 명령어 라우팅
+                imageHandler.handleMatchUploadCommand(event);
                 break;
 
             case "my-info":
@@ -56,43 +57,32 @@ public class SlashCommandListener extends ListenerAdapter {
         }
     }
 
+    // --- 2. 버튼 상호작용 라우팅 ---
     @Override
-    public void onModalInteraction(ModalInteractionEvent event) {
-        // 모달 이벤트가 발생하면 핸들러에게 위임하여 처리
-        interactionHandler.handleModalSubmission(event);
+    public void onButtonInteraction(ButtonInteractionEvent event) {
+        String componentId = event.getComponentId();
+
+        // MatchImageHandler의 버튼 ID 접두사를 확인하여 위임
+        if (componentId.startsWith(MatchImageHandler.BUTTON_ID_CONFIRM) ||
+                componentId.startsWith(MatchImageHandler.BUTTON_ID_CANCEL)) {
+
+            // 버튼 클릭 시 로딩 상태를 표시 (첫 번째 응답)
+            event.deferEdit().queue();
+            imageHandler.handleFinalConfirmation(event);
+        }
+        // ... (다른 버튼 이벤트 처리 로직은 여기에 추가) ...
     }
 
-    private void handleMatchRegisterCommand(SlashCommandInteractionEvent event) {
-
-        // 1. 초기 옵션 (승리팀) 가져오기
-        OptionMapping winnerTeamOption = event.getOption("winner-team");
-        if (winnerTeamOption == null) {
-            event.reply("❌ 오류: 승리팀 옵션을 찾을 수 없습니다. (내부 오류)").setEphemeral(true).queue();
-            return;
-        }
-        String winnerTeam = winnerTeamOption.getAsString();
-
-        // 2. 기본 유효성 검사
-        if (!winnerTeam.equalsIgnoreCase("RED") && !winnerTeam.equalsIgnoreCase("BLUE")) {
-            event.reply("❌ 오류: 승리팀은 RED 또는 BLUE로 정확히 입력해 주세요.").setEphemeral(true).queue();
-            return;
-        }
-
-        // 3. 인터랙티브 등록 시작 (첫 번째 Modal 띄우기)
-
-        // 이 단계는 복잡한 Modal 로직을 필요로 하므로, 여기서는 시작 메시지만 출력합니다.
-        // 실제 구현에서는 이 시점에서 Modal을 빌드하고 event.replyModal(modal).queue()를 호출해야 합니다.
-
-        event.reply("✅ [" + winnerTeam.toUpperCase() + " 팀 승리] 경기 기록 등록 절차를 시작합니다. 첫 번째 선수 정보를 입력해주세요.")
-                .setEphemeral(true)
-                .queue();
-
-        // TODO: 첫 번째 PlayerStats Modal을 띄우는 로직 구현
-    }
-
+    // --- 3. handleRegisterCommand (기존 유지) ---
     private void handleRegisterCommand(SlashCommandInteractionEvent event) {
 
-        String fullNickname = event.getOption("lol-nickname").getAsString();
+        OptionMapping nicknameOption = event.getOption("lol-nickname");
+        if (nicknameOption == null) {
+            event.reply("❌ 오류: 롤 닉네임 옵션을 입력해 주세요.").setEphemeral(true).queue();
+            return;
+        }
+
+        String fullNickname = nicknameOption.getAsString();
 
         Matcher matcher = RIOT_ID_PATTERN.matcher(fullNickname);
 
@@ -118,6 +108,7 @@ public class SlashCommandListener extends ListenerAdapter {
         }
     }
 
+    // --- 4. onGuildReady (명령어 등록) ---
     @Override
     public void onGuildReady(GuildReadyEvent event) {
         List<CommandData> commandDataList = new ArrayList<>();
@@ -127,15 +118,18 @@ public class SlashCommandListener extends ListenerAdapter {
                         .addOption(OptionType.STRING, "lol-nickname", "롤 닉네임과 태그를 '이름#태그' 형식으로 입력하세요 (예: Hide On Bush#KR1)", true)
         );
 
+        // ⭐ /match-upload 명령어 등록 (STRING + ATTACHMENT)
+        commandDataList.add(
+                Commands.slash("match-upload", "경기 결과 이미지로 기록을 등록합니다.")
+                        .addOption(OptionType.STRING, "winner-team", "승리팀을 입력하세요 (RED/BLUE)", true)
+                        .addOption(OptionType.ATTACHMENT, "result-image", "경기 결과 스크린샷 이미지", true)
+        );
+
         commandDataList.add(
                 Commands.slash("my-info", "내 정보를 보여줍니다")
         );
         commandDataList.add(
                 Commands.slash("rank-check", "내전 랭킹을 확인합니다")
-        );
-        commandDataList.add(
-                Commands.slash("match-register", "내전 경기 기록 등록을 시작하고 승리팀을 결정합니다.")
-                        .addOption(OptionType.STRING, "winner-team", "승리팀을 입력하세요 (RED/BLUE)", true)
         );
 
         event.getGuild().updateCommands().addCommands(commandDataList).queue();
