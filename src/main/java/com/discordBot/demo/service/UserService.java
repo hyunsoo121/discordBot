@@ -1,16 +1,25 @@
 package com.discordBot.demo.service;
 
-
-import org.springframework.transaction.annotation.Transactional;
+import com.discordBot.demo.domain.entity.LolAccount;
+import java.util.List;
 
 public interface UserService {
+
     /**
-     * 롤 닉네임을 검증하고 데이터베이스에 등록합니다.
-     * @param discordUserId 닉네임을 등록하는 디스코드 사용자 ID
-     * @param gameName 롤 게임 이름 (닉네임)
-     * @param tagLine 롤 태그 라인 (예: KR1)
-     * @return 작업 결과 메시지
+     * Riot ID를 디스코드 유저에게 연결하거나 새로운 롤 계정을 등록합니다.
      */
-    @Transactional
     String registerLolNickname(Long discordUserId, String gameName, String tagLine);
+
+    /**
+     * GameName이 일치하는 모든 롤 계정 목록을 조회합니다.
+     */
+    List<LolAccount> findAccountsByGameName(String gameName);
+
+    /**
+     * ⭐ 신규 추가: DB에 존재하는 LolAccount (accountId)에 Discord User를 연결합니다.
+     * @param discordUserId 연결을 요청한 디스코드 유저 ID
+     * @param lolAccountId 연결할 롤 계정의 DB ID
+     * @return 처리 결과 메시지
+     */
+    String linkExistingAccount(Long discordUserId, Long lolAccountId);
 }

@@ -21,12 +21,12 @@ public class PlayerStats {
     private MatchRecord matchRecord;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id", nullable = true)
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "lol_id")
-    private LolNickname lolNickname; // 해당 경기에 사용된 롤 닉네임
+    private LolAccount lolNickname; // 해당 경기에 사용된 롤 닉네임
 
     @Column(name = "team", nullable = false, length = 10)
     private String team; // 속한 팀 (RED/BLUE)
