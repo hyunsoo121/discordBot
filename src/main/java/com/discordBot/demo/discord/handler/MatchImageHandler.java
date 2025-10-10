@@ -78,7 +78,7 @@ public class MatchImageHandler {
 
         // ⭐⭐⭐ 3. 롤 계정 후보 목록 조회 (OCR 힌트 준비) ⭐⭐⭐
         // DB에 등록된 계정 중 현재 Discord 서버에 연결된 사용자 계정만 가져옵니다.
-        List<LolAccount> allRegisteredAccounts = lolAccountRepository.findAllByServerId(serverId);
+        List<LolAccount> allRegisteredAccounts = lolAccountRepository.findAllByGuildServer_DiscordServerId(serverId);
         log.info("OCR 힌트를 위해 서버 {}에 등록된 계정 {}개를 로드했습니다.", serverId, allRegisteredAccounts.size());
         // ⭐⭐⭐ OCR 힌트 준비 끝 ⭐⭐⭐
 

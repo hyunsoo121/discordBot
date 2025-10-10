@@ -8,7 +8,7 @@ public interface UserService {
     /**
      * Riot ID를 디스코드 유저에게 연결하거나 새로운 롤 계정을 등록합니다.
      */
-    String registerLolNickname(Long discordUserId, String gameName, String tagLine);
+    String registerLolNickname(Long discordUserId, String gameName, String tagLine, Long discordServerId);
 
     /**
      * ⭐ 신규 추가: DB에 존재하는 LolAccount (accountId)에 Discord User를 연결합니다.

@@ -9,7 +9,6 @@ import com.discordBot.demo.domain.entity.PlayerStats;
 import com.discordBot.demo.domain.entity.User;
 import com.discordBot.demo.domain.repository.LolAccountRepository;
 import com.discordBot.demo.domain.repository.MatchRecordRepository;
-import com.discordBot.demo.domain.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,8 +54,12 @@ public class MatchRecordServiceImpl implements MatchRecordService {
                 tagLine = "";
             }
 
-            // DB에서 롤 계정 찾기
-            Optional<LolAccount> lolAccountOpt = lolAccountRepository.findByGameNameAndTagLine(gameName, tagLine);
+            // ⭐ DB에서 롤 계정 찾기 (서버 ID 기준으로 조회)
+            Optional<LolAccount> lolAccountOpt = lolAccountRepository.findByGameNameAndTagLineAndGuildServer_DiscordServerId(
+                    gameName,
+                    tagLine,
+                    discordServerId // ⭐ 서버 ID 인자 추가
+            );
 
             if (lolAccountOpt.isEmpty()) {
                 // DB에 없는 계정이 발견됨: 미등록 리스트에 추가
@@ -70,10 +73,9 @@ public class MatchRecordServiceImpl implements MatchRecordService {
 
             // 사용자에게 오류 메시지와 미등록 계정 목록을 보여줍니다.
             throw new IllegalArgumentException(
-                    "❌ 오류: DB에 등록되지 않은 롤 계정이 포함되어 있습니다. 먼저 `/admin-register` 명령어로 해당 계정을 등록해 주세요.\n\n" +
+                    "❌ 오류: 이 서버에 등록되지 않은 롤 계정이 포함되어 있습니다. 먼저 `/register` 명령어로 해당 계정을 등록해 주세요.\n\n" +
                             "**[미등록 계정 목록]**\n" + missingList
             );
-            // 이 예외는 SlashCommandListener로 전달되어 트랜잭션을 롤백하고 사용자에게 메시지를 보여줍니다.
         }
 
         // 4. 검증 완료: 이제 안전하게 MatchRecord 생성 및 PlayerStats 저장
@@ -89,8 +91,12 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             String tagLine = playerDto.getLolTagLine();
             if (!StringUtils.hasText(tagLine)) tagLine = "";
 
-            // DB에서 계정 정보를 다시 가져옴
-            LolAccount lolAccount = lolAccountRepository.findByGameNameAndTagLine(gameName, tagLine).get();
+            // ⭐ DB에서 계정 정보를 다시 가져옴 (서버 ID 포함)
+            LolAccount lolAccount = lolAccountRepository.findByGameNameAndTagLineAndGuildServer_DiscordServerId(
+                    gameName,
+                    tagLine,
+                    discordServerId
+            ).get();
 
             // 롤 계정에 연결된 디스코드 유저 (없으면 null)
             User user = lolAccount.getUser();
@@ -113,6 +119,4 @@ public class MatchRecordServiceImpl implements MatchRecordService {
         // 5. MatchRecord 저장
         return matchRecordRepository.save(matchRecord);
     }
-
-    // 이 외의 linkExistingAccount 등의 메서드는 그대로 유지됩니다.
 }

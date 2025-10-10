@@ -13,7 +13,7 @@ import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
-import net.dv8tion.jda.api.interactions.commands.build.OptionData; // ⭐ OptionData 임포트 추가
+import net.dv8tion.jda.api.interactions.commands.build.OptionData;
 import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import org.springframework.stereotype.Component;
 
@@ -106,15 +106,19 @@ public class SlashCommandListener extends ListenerAdapter {
 
         String gameName = matcher.group(1);
         String tagLine = matcher.group(2);
-        // 대상 유저의 ID를 추출 (Discord User 객체에서 ID를 가져옴)
+
+        // 대상 유저의 ID 추출
         Long targetDiscordUserId = targetUserOption.getAsUser().getIdLong();
+
+        // ⭐ 서버 ID 획득 (서비스 계층에 전달해야 함)
+        Long discordServerId = event.getGuild().getIdLong();
 
         event.deferReply(true).queue();
 
         // 4. 서비스 호출
         try {
-            // UserService의 관리자 전용 메서드 호출
-            String resultMessage = userService.registerLolNickname(targetDiscordUserId, gameName, tagLine);
+            // ⭐ discordServerId 인자를 추가하여 호출
+            String resultMessage = userService.registerLolNickname(targetDiscordUserId, gameName, tagLine, discordServerId);
             event.getHook().sendMessage(resultMessage).queue();
 
         } catch (Exception e) {
@@ -138,16 +142,14 @@ public class SlashCommandListener extends ListenerAdapter {
         );
 
         // 2. /match-upload 명령어 등록 (승리팀 옵션 수정)
-
-        // ⭐ OptionData를 사용하여 Choice를 옵션에 직접 추가합니다.
         OptionData winnerTeamOption = new OptionData(
                 OptionType.STRING,
                 "winner-team",
                 "승리팀을 선택하세요.",
                 true
         )
-                .addChoice("RED 팀 승리", "RED")
-                .addChoice("BLUE 팀 승리", "BLUE");
+                .addChoice("BLUE 팀 승리", "BLUE")
+                .addChoice("RED 팀 승리", "RED");
 
         commandDataList.add(
                 Commands.slash("match-upload", "경기 결과 이미지로 기록을 등록합니다.")

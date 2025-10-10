@@ -1,6 +1,7 @@
 package com.discordBot.demo.service;
 
 import com.discordBot.demo.domain.dto.RiotAccountDto;
+import com.discordBot.demo.domain.entity.GuildServer; // GuildServer 엔티티 임포트 필요
 import com.discordBot.demo.domain.entity.LolAccount;
 import com.discordBot.demo.domain.entity.User;
 import com.discordBot.demo.domain.repository.LolAccountRepository;
@@ -20,22 +21,27 @@ public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final LolAccountRepository lolAccountRepository;
-    private final RiotApiService riotApiService; // ⭐ RiotApiService 주입
+    private final RiotApiService riotApiService;
+    private final ServerManagementService serverManagementService; // ⭐ ServerManagementService 주입
 
     /**
-     * 관리자가 대상 유저의 롤 계정을 대신 등록합니다.
-     * 이 서비스는 디스코드 봇 계층에서 관리자 권한이 확인된 후 호출됩니다.
+     * 관리자가 대상 유저의 롤 계정을 대신 등록합니다. (서버별 등록)
+     * @param targetDiscordUserId 롤 계정을 연결할 대상 디스코드 유저 ID
+     * @param gameName 롤 게임 이름
+     * @param tagLine 롤 태그라인
+     * @param discordServerId 계정이 등록될 디스코드 서버 ID
+     * @return 등록 완료 메시지
      */
     @Override
     @Transactional
-    public String registerLolNickname(Long targetDiscordUserId, String gameName, String tagLine) {
+    public String registerLolNickname(Long targetDiscordUserId, String gameName, String tagLine, Long discordServerId) {
 
-        // TagLine이 없으면 빈 문자열로 표준화 (API 호출 전에는 원본을 사용)
+        // TagLine이 없으면 빈 문자열로 표준화
         if (!StringUtils.hasText(tagLine)) {
             tagLine = "";
         }
 
-        // 1. Riot API를 통해 계정 유효성 검증 및 Puuid 획득
+        // 1. Riot API를 통해 계정 유효성 검증 및 Puuid 획득 (생략 없음)
         Optional<RiotAccountDto> riotAccountOpt = riotApiService.verifyNickname(gameName, tagLine);
 
         if (riotAccountOpt.isEmpty()) {
@@ -47,7 +53,6 @@ public class UserServiceImpl implements UserService {
         RiotAccountDto riotAccount = riotAccountOpt.get();
         String puuid = riotAccount.getPuuid();
 
-        // API 응답으로 받은 GameName과 TagLine을 사용 (최신 정보 및 대소문자 일치)
         String verifiedGameName = riotAccount.getGameName();
         String verifiedTagLine = riotAccount.getTagLine();
 
@@ -61,30 +66,40 @@ public class UserServiceImpl implements UserService {
                     return userRepository.save(newUser);
                 });
 
-        // 3. 롤 계정 중복 확인 (검증된 GameName과 TagLine 사용)
-        Optional<LolAccount> existingAccountOpt = lolAccountRepository.findByGameNameAndTagLine(verifiedGameName, verifiedTagLine);
+        // 2.5. ⭐ GuildServer 엔티티 확보 (LolAccount에 연결하기 위해 필수)
+        // 해당 서버가 DB에 없으면 생성합니다.
+        GuildServer guildServer = serverManagementService.findOrCreateGuildServer(discordServerId);
+
+
+        // 3. ⭐ 롤 계정 중복 확인 (GameName + TagLine + Server ID 조합으로 확인)
+        Optional<LolAccount> existingAccountOpt = lolAccountRepository.findByGameNameAndTagLineAndGuildServer_DiscordServerId(
+                verifiedGameName,
+                verifiedTagLine,
+                discordServerId // ⭐ DiscordServerId를 사용하여 서버별 중복 확인
+        );
 
         if (existingAccountOpt.isPresent()) {
             LolAccount existingAccount = existingAccountOpt.get();
 
             // 3-1. 소유권 충돌 검사: 이미 다른 유저가 소유한 경우
             if (existingAccount.getUser() != null && !existingAccount.getUser().equals(targetUser)) {
+                // 이 서버 내에서 이 계정은 이미 다른 유저에게 등록되어 있습니다.
                 throw new IllegalArgumentException(
-                        "❌ 오류: 롤 계정 **" + existingAccount.getFullAccountName() +
+                        "❌ 오류: 이 서버 내 롤 계정 **" + existingAccount.getFullAccountName() +
                                 "**은 이미 다른 사용자에게 등록되어 있어 소유권을 변경할 수 없습니다."
                 );
             }
 
             // 3-2. 계정은 있으나 연결 유저가 없는 경우 또는 이미 연결된 경우
-            // Puuid 및 최신 GameName/TagLine 업데이트 후 대상 유저에게 연결
             existingAccount.setUser(targetUser);
             existingAccount.setPuuid(puuid);
             existingAccount.setGameName(verifiedGameName);
             existingAccount.setTagLine(verifiedTagLine);
+            existingAccount.setGuildServer(guildServer); // ⭐ GuildServer 설정 추가
             lolAccountRepository.save(existingAccount);
 
             return "✅ 관리자 등록 완료: 롤 계정 **" + existingAccount.getFullAccountName() +
-                    "**가 대상 유저에게 연결되었습니다!";
+                    "**가 대상 유저에게 연결되었습니다! (서버 ID: " + discordServerId + ")";
         }
 
         // 4. 신규 롤 계정 등록
@@ -93,6 +108,7 @@ public class UserServiceImpl implements UserService {
         newAccount.setTagLine(verifiedTagLine);
         newAccount.setPuuid(puuid);
         newAccount.setUser(targetUser);
+        newAccount.setGuildServer(guildServer); // ⭐ GuildServer 설정 추가
 
         lolAccountRepository.save(newAccount);
 
