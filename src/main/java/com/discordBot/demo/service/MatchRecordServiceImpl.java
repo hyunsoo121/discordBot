@@ -15,10 +15,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import jakarta.persistence.EntityManager;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -31,60 +33,89 @@ public class MatchRecordServiceImpl implements MatchRecordService {
     private final UserRepository userRepository;
     private final LolAccountRepository lolAccountRepository;
     private final EntityManager em;
+    private final RiotApiService riotApiService;
+
 
     @Override
     public MatchRecord registerMatch(MatchRegistrationDto matchDto) {
 
-        Long serverId = matchDto.getServerId();
+        Long discordServerId = matchDto.getServerId(); // Discord ID (DB PK)
 
-        // 1. GuildServer의 존재를 별도 트랜잭션에서 보장하고, 실제 객체를 가져옵니다.
-        // 이 객체는 DB에서 로드되거나 새로 생성되었으므로, 실제 PK(id)를 가지고 있습니다.
-        GuildServer persistedGuildServer = serverManagementService.findOrCreateGuildServer(serverId);
+        serverManagementService.findOrCreateGuildServer(discordServerId);
 
-        // 2. MatchRecord 엔티티 생성
         MatchRecord matchRecord = new MatchRecord();
+        GuildServer proxyGuildServer = em.getReference(GuildServer.class, discordServerId);
 
-        // ⭐⭐ 핵심 수정: Discord ID 대신 DB가 생성한 실제 PK(persistedGuildServer.getId())를 사용합니다. ⭐⭐
-        // 이 PK를 getReference()에 사용하여 충돌을 방지합니다.
-        GuildServer proxyGuildServer = em.getReference(GuildServer.class, persistedGuildServer.getId());
-
-        matchRecord.setGuildServer(proxyGuildServer);
+        matchRecord.setGuildServer(proxyGuildServer); // Proxy 객체를 외래 키 설정에 사용
         matchRecord.setWinnerTeam(matchDto.getWinnerTeam());
 
-        // 3. PlayerStats 리스트 처리 및 양방향 관계 설정
         matchDto.getPlayerStatsList().stream()
                 .forEach(playerDto -> {
 
-                    // 3-A. User 찾기 (없으면 NULL로 둡니다.)
                     User user = userRepository.findByDiscordUserId(playerDto.getDiscordUserId())
                             .orElse(null);
 
-                    // 3-B. LolAccount 찾기 또는 생성
-                    Optional<LolAccount> lolAccountOpt = lolAccountRepository.findByGameNameAndTagLine(playerDto.getLolGameName(), playerDto.getLolTagLine());
+                    String rawGameName = playerDto.getLolGameName();
 
-                    LolAccount lolAccount = lolAccountOpt
-                            .orElseGet(() -> {
-                                log.info("새로운 롤 계정 등록 시도: {}{}", playerDto.getLolGameName(), playerDto.getLolTagLine());
+                    // ⭐⭐⭐ 핵심 수정: GameName 정규화 (모든 공백 및 앞뒤 공백 제거) ⭐⭐⭐
+                    String gameName = rawGameName.trim().replaceAll("\\s+", "");
 
-                                LolAccount newAccount = new LolAccount();
-                                newAccount.setGameName(playerDto.getLolGameName());
-                                newAccount.setTagLine(playerDto.getLolTagLine());
+                    String tagLine = playerDto.getLolTagLine();
 
-                                newAccount.setUser(user);
+                    // 3-B. LolAccount 찾기 로직
+                    Optional<LolAccount> lolAccountOpt = Optional.empty();
 
-                                return lolAccountRepository.save(newAccount);
-                            });
-
-                    // 3-C. 소유자 검증
-                    if (lolAccountOpt.isPresent()) {
-                        User existingUser = lolAccount.getUser();
-
-                        if (existingUser != null && !existingUser.equals(user)) {
-                            throw new IllegalArgumentException("❌ 오류: 롤 계정(" + lolAccount.getFullAccountName() + ")은 이미 다른 디스코드 유저에게 등록되어 있습니다.");
-                        }
+                    if (!StringUtils.hasText(tagLine)) {
+                        tagLine = "";
                     }
 
-                    // 3-D. PlayerStats 생성 및 설정
+                    if (StringUtils.hasText(tagLine)) {
+                        // 1순위: TagLine이 있다면 정확한 조합으로 찾습니다.
+                        // (정규화된 gameName 사용)
+                        lolAccountOpt = lolAccountRepository.findByGameNameAndTagLine(gameName, tagLine);
+
+                    } else {
+                        // 2순위: TagLine이 없다면, GameName이 같은 모든 계정 중 연결 가능한 것을 찾습니다.
+                        // (정규화된 gameName 사용)
+                        List<LolAccount> accountsWithSameGameName = lolAccountRepository.findByGameName(gameName);
+
+                        // 최우선 순위: TagLine이 채워진 계정 (register된 계정)을 찾습니다.
+                        lolAccountOpt = accountsWithSameGameName.stream()
+                                .filter(account -> StringUtils.hasText(account.getTagLine()))
+                                .findFirst();
+
+                        if (lolAccountOpt.isEmpty()) {
+                            // TagLine이 채워진 계정이 없다면, TagLine이 없는 (매치 등록으로 생성된) 임시 계정을 찾습니다.
+                            lolAccountOpt = accountsWithSameGameName.stream()
+                                    .filter(account -> !StringUtils.hasText(account.getTagLine()))
+                                    .findFirst();
+                        }
+                    }
+                    // 3-B 끝
+
+                    // 3-C. LolAccount 찾기 또는 생성
+                    final String finalTagLine = tagLine;
+                    LolAccount lolAccount;
+
+                    if (lolAccountOpt.isPresent()) {
+                        // 계정이 DB에 존재함: 기존 계정 사용
+                        lolAccount = lolAccountOpt.get();
+                    } else {
+                        // 계정이 DB에 없음: 새로운 계정 생성 및 저장
+
+                        LolAccount newAccount = new LolAccount();
+                        newAccount.setGameName(gameName); // 정규화된 이름으로 저장
+                        newAccount.setTagLine(finalTagLine);
+
+                        newAccount.setUser(user);
+
+                        lolAccount = lolAccountRepository.save(newAccount);
+                    }
+
+
+                    // 3-D. 소유자 검증 (제거됨)
+
+                    // 3-E. PlayerStats 생성 및 설정
                     PlayerStats stats = new PlayerStats();
                     stats.setUser(user);
                     stats.setLolNickname(lolAccount);

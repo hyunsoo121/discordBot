@@ -4,6 +4,7 @@ import com.discordBot.demo.domain.entity.LolAccount;
 import com.discordBot.demo.domain.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface LolAccountRepository extends JpaRepository<LolAccount, Long> {
@@ -24,4 +25,7 @@ public interface LolAccountRepository extends JpaRepository<LolAccount, Long> {
      * @return 존재 여부
      */
     boolean existsByUserAndGameNameAndTagLine(User user, String gameName, String tagLine);
+
+    List<LolAccount> findByGameName(String gameName);
+
 }
