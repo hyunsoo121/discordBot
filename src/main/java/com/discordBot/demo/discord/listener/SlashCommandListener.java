@@ -1,4 +1,4 @@
-package com.discordBot.demo.listener;
+package com.discordBot.demo.discord.listener;
 
 import com.discordBot.demo.discord.handler.AdminCommandHandler;
 import com.discordBot.demo.service.UserService;

@@ -1,8 +1,9 @@
-package com.discordBot.demo.service;
+package com.discordBot.demo.service.impl;
 
 import com.discordBot.demo.domain.dto.MatchRegistrationDto;
 import com.discordBot.demo.domain.dto.PlayerStatsDto;
 import com.discordBot.demo.domain.entity.LolAccount; // LolAccount 엔티티 임포트
+import com.discordBot.demo.service.ImageAnalysisService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 // Google GenAI SDK v1.8.0 import

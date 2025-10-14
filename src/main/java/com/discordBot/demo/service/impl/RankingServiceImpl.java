@@ -1,9 +1,10 @@
-package com.discordBot.demo.service;
+package com.discordBot.demo.service.impl;
 
 import com.discordBot.demo.domain.dto.UserRankDto;
 import com.discordBot.demo.domain.entity.UserServerStats;
 import com.discordBot.demo.domain.repository.UserServerStatsRepository;
 
+import com.discordBot.demo.service.RankingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j; // ⭐ 추가
 import org.springframework.stereotype.Service;

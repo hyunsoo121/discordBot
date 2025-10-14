@@ -1,4 +1,4 @@
-package com.discordBot.demo.service;
+package com.discordBot.demo.service.impl;
 
 import com.discordBot.demo.domain.dto.RiotAccountDto;
 import com.discordBot.demo.domain.entity.GuildServer; // GuildServer 엔티티 임포트 필요
@@ -6,6 +6,9 @@ import com.discordBot.demo.domain.entity.LolAccount;
 import com.discordBot.demo.domain.entity.User;
 import com.discordBot.demo.domain.repository.LolAccountRepository;
 import com.discordBot.demo.domain.repository.UserRepository;
+import com.discordBot.demo.service.RiotApiService;
+import com.discordBot.demo.service.ServerManagementService;
+import com.discordBot.demo.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

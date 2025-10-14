@@ -1,7 +1,7 @@
 package com.discordBot.demo.config;
 
-import com.discordBot.demo.listener.DiscordBotListener;
-import com.discordBot.demo.listener.SlashCommandListener;
+import com.discordBot.demo.discord.listener.DiscordBotListener;
+import com.discordBot.demo.discord.listener.SlashCommandListener;
 import lombok.RequiredArgsConstructor; // 💡 추가: final 필드 자동 주입
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
