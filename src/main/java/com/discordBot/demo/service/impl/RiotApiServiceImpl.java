@@ -1,6 +1,7 @@
-package com.discordBot.demo.service;
+package com.discordBot.demo.service.impl;
 
 import com.discordBot.demo.domain.dto.RiotAccountDto;
+import com.discordBot.demo.service.RiotApiService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;

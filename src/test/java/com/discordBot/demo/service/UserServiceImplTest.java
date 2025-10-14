@@ -6,6 +6,7 @@ import com.discordBot.demo.domain.entity.LolAccount;
 import com.discordBot.demo.domain.entity.User;
 import com.discordBot.demo.domain.repository.LolAccountRepository;
 import com.discordBot.demo.domain.repository.UserRepository;
+import com.discordBot.demo.service.impl.UserServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

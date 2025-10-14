@@ -8,6 +8,7 @@ import com.discordBot.demo.domain.entity.MatchRecord;
 import com.discordBot.demo.domain.entity.User;
 import com.discordBot.demo.domain.repository.LolAccountRepository;
 import com.discordBot.demo.domain.repository.MatchRecordRepository;
+import com.discordBot.demo.service.impl.MatchRecordServiceImpl;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
