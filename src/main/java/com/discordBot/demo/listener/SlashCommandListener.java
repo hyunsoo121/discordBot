@@ -1,7 +1,9 @@
 package com.discordBot.demo.listener;
 
+import com.discordBot.demo.discord.handler.AdminCommandHandler;
 import com.discordBot.demo.service.UserService;
 import com.discordBot.demo.discord.handler.MatchImageHandler;
+import com.discordBot.demo.discord.handler.RankingHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.dv8tion.jda.api.Permission;
@@ -30,6 +32,8 @@ public class SlashCommandListener extends ListenerAdapter {
 
     private final UserService userService;
     private final MatchImageHandler imageHandler;
+    private final RankingHandler rankingHandler;
+    private final AdminCommandHandler adminCommandHandler;
 
     private static final Pattern RIOT_ID_PATTERN = Pattern.compile("^(.+)#(.+)$");
 
@@ -37,26 +41,47 @@ public class SlashCommandListener extends ListenerAdapter {
     @Override
     public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
 
-        switch (event.getName()){
-            case "register": // '/register'로 라우팅
-                handleRegisterCommand(event);
-                break;
+        // 1. 응답 지연 (Deferred Reply)
+        // /rank-check는 본인에게만 보이도록 true로 설정
+        // 나머지 명령어도 대부분 개인 응답이므로 true로 설정
 
-            case "match-upload":
-                imageHandler.handleMatchUploadCommand(event);
-                break;
+        // ⭐ 수정: 모든 명령에 대해 Ephemeral(true)로 deferReply 호출
+        event.deferReply(true).queue();
 
-            case "my-info":
-                event.reply("**[내 정보] 기능은 아직 구현되지 않았습니다.**").setEphemeral(true).queue();
-                break;
+        try {
+            switch (event.getName()){
+                case "register":
+                    handleRegisterCommand(event);
+                    break;
 
-            case "rank-check":
-                event.reply("**[랭킹 확인] 기능은 아직 구현되지 않았습니다.**").setEphemeral(true).queue();
-                break;
+                case "match-upload":
+                    imageHandler.handleMatchUploadCommand(event);
+                    break;
 
-            default:
-                event.reply("알 수 없는 커맨드입니다.").setEphemeral(true).queue();
-                break;
+                case "rank-check":
+                    // ⭐ RankingHandler 내에서 응답을 Ephemeral로 처리하도록 위임
+                    rankingHandler.handleRankingCommand(event);
+                    break;
+
+                case "my-info":
+                    event.getHook().sendMessage("**[내 정보] 기능은 아직 구현되지 않았습니다.**").queue();
+                    break;
+
+                case "init-data":
+                    handleInitData(event);
+                    break;
+
+                default:
+                    // getHook()은 이미 deferReply(true)를 따릅니다.
+                    event.getHook().sendMessage("알 수 없는 커맨드입니다.").queue();
+                    break;
+            }
+        } catch (IllegalArgumentException e) {
+            String message = e.getMessage().startsWith("❌ 오류:") ? e.getMessage() : "❌ 비즈니스 로직 오류가 발생했습니다.";
+            event.getHook().sendMessage(message).queue();
+        } catch (Exception e) {
+            log.error("슬래시 커맨드 처리 중 예기치 않은 오류 발생: {}", event.getName(), e);
+            event.getHook().sendMessage("❌ 서버 처리 중 예기치 않은 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.").queue();
         }
     }
 
@@ -65,65 +90,62 @@ public class SlashCommandListener extends ListenerAdapter {
     public void onButtonInteraction(ButtonInteractionEvent event) {
         String componentId = event.getComponentId();
 
-        // MatchImageHandler의 버튼 ID 접두사를 확인하여 위임
         if (componentId.startsWith(MatchImageHandler.BUTTON_ID_CONFIRM) ||
                 componentId.startsWith(MatchImageHandler.BUTTON_ID_CANCEL)) {
 
-            // 버튼 클릭 시 로딩 상태를 표시
             event.deferEdit().queue();
             imageHandler.handleFinalConfirmation(event);
         }
     }
 
-    // 3. handleRegisterCommand: 관리자 권한 체크 및 대리 등록 로직 수행
-    private void handleRegisterCommand(SlashCommandInteractionEvent event) {
-
-        // 1. 관리자 권한 확인 (가장 중요)
+    private void handleInitData(SlashCommandInteractionEvent event) {
         Member member = event.getMember();
         if (member == null || !member.hasPermission(Permission.ADMINISTRATOR)) {
-            event.reply("❌ 오류: 이 명령어는 **서버 관리자**만 사용할 수 있습니다.").setEphemeral(true).queue();
+            // deferReply(true) 상태이므로 getHook 사용
+            event.getHook().sendMessage("❌ 오류: **데이터 초기화** 명령어는 서버 관리자만 사용할 수 있습니다.").queue();
+            return;
+        }
+        adminCommandHandler.handleInitDataCommand(event);
+    }
+
+    // 3. handleRegisterCommand: 관리자 권한 체크 및 대리 등록 로직 수행
+    private void handleRegisterCommand(SlashCommandInteractionEvent event) {
+        // deferReply(true) 상태이므로 getHook 사용
+
+        Member member = event.getMember();
+        if (member == null || !member.hasPermission(Permission.ADMINISTRATOR)) {
+            event.getHook().sendMessage("❌ 오류: 이 명령어는 **서버 관리자**만 사용할 수 있습니다.").queue();
             return;
         }
 
-        // 2. 옵션 추출
         OptionMapping targetUserOption = event.getOption("target-user");
         OptionMapping nicknameOption = event.getOption("lol-nickname");
 
         if (targetUserOption == null || nicknameOption == null) {
-            event.reply("❌ 오류: 대상 유저와 롤 닉네임 옵션을 모두 입력해 주세요.").setEphemeral(true).queue();
+            event.getHook().sendMessage("❌ 오류: 대상 유저와 롤 닉네임 옵션을 모두 입력해 주세요.").queue();
             return;
         }
 
-        // 3. Riot ID 형식 검증
         String fullNickname = nicknameOption.getAsString();
         Matcher matcher = RIOT_ID_PATTERN.matcher(fullNickname);
 
         if (!matcher.matches()) {
-            event.reply("❌ 오류: 롤 닉네임을 **'게임이름#태그'** 형식으로 정확히 입력해 주세요. (예: Faker#KR1)")
-                    .setEphemeral(true).queue();
+            event.getHook().sendMessage("❌ 오류: 롤 닉네임을 **'게임이름#태그'** 형식으로 정확히 입력해 주세요. (예: Faker#KR1)").queue();
             return;
         }
 
         String gameName = matcher.group(1);
         String tagLine = matcher.group(2);
 
-        // 대상 유저의 ID 추출
         Long targetDiscordUserId = targetUserOption.getAsUser().getIdLong();
-
-        // ⭐ 서버 ID 획득 (서비스 계층에 전달해야 함)
         Long discordServerId = event.getGuild().getIdLong();
 
-        event.deferReply(true).queue();
-
-        // 4. 서비스 호출
         try {
-            // ⭐ discordServerId 인자를 추가하여 호출
             String resultMessage = userService.registerLolNickname(targetDiscordUserId, gameName, tagLine, discordServerId);
             event.getHook().sendMessage(resultMessage).queue();
 
         } catch (Exception e) {
             log.error("관리자 롤 닉네임 등록 중 에러 발생: {}", e.getMessage(), e);
-            // 사용자 정의 예외 메시지(UserService에서 던진)를 그대로 전달
             event.getHook().sendMessage(e.getMessage().startsWith("❌ 오류:") ? e.getMessage() : "❌ 서버 처리 중 예기치 않은 오류가 발생했습니다.").queue();
         }
     }
@@ -134,14 +156,12 @@ public class SlashCommandListener extends ListenerAdapter {
     public void onGuildReady(GuildReadyEvent event) {
         List<CommandData> commandDataList = new ArrayList<>();
 
-        // 1. '/register' 명령 이름만 사용하며 관리자 전용 옵션을 유지
         commandDataList.add(
                 Commands.slash("register", "관리자 전용: 특정 유저의 롤 닉네임(Riot ID)을 연결합니다.")
                         .addOption(OptionType.USER, "target-user", "롤 계정을 연결할 디스코드 유저를 @멘션하세요.", true)
                         .addOption(OptionType.STRING, "lol-nickname", "롤 닉네임과 태그를 '이름#태그' 형식으로 입력하세요 (예: Hide On Bush#KR1)", true)
         );
 
-        // 2. /match-upload 명령어 등록 (승리팀 옵션 수정)
         OptionData winnerTeamOption = new OptionData(
                 OptionType.STRING,
                 "winner-team",
@@ -153,19 +173,21 @@ public class SlashCommandListener extends ListenerAdapter {
 
         commandDataList.add(
                 Commands.slash("match-upload", "경기 결과 이미지로 기록을 등록합니다.")
-                        // OptionData를 addOptions로 추가합니다.
                         .addOptions(winnerTeamOption)
                         .addOption(OptionType.ATTACHMENT, "result-image", "경기 결과 스크린샷 이미지", true)
         );
 
-        // 3. 나머지 명령어 등록
         commandDataList.add(
                 Commands.slash("my-info", "내 정보를 보여줍니다")
         );
+
         commandDataList.add(
                 Commands.slash("rank-check", "내전 랭킹을 확인합니다")
         );
 
+        commandDataList.add(
+                Commands.slash("init-data", "관리자 전용: 현재 서버에 테스트용 5경기 기록을 주입합니다.")
+        );
         event.getGuild().updateCommands().addCommands(commandDataList).queue();
     }
 }
