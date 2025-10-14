@@ -9,7 +9,6 @@ import com.discordBot.demo.domain.entity.PlayerStats;
 import com.discordBot.demo.domain.entity.User;
 import com.discordBot.demo.domain.repository.LolAccountRepository;
 import com.discordBot.demo.domain.repository.MatchRecordRepository;
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,6 +29,7 @@ public class MatchRecordServiceImpl implements MatchRecordService {
     private final MatchRecordRepository matchRecordRepository;
     private final ServerManagementService serverManagementService;
     private final LolAccountRepository lolAccountRepository;
+    private final UserServerStatsService userServerStatsService; // ⭐ 누적 통계 서비스
     private final EntityManager em;
 
 
@@ -38,70 +38,58 @@ public class MatchRecordServiceImpl implements MatchRecordService {
 
         Long discordServerId = matchDto.getServerId();
 
+        // 서버 존재 확인 (없으면 생성)
         serverManagementService.findOrCreateGuildServer(discordServerId);
 
-        // 1. 미등록 계정 목록을 저장할 리스트 초기화
+        // 1. 미등록 계정 검증 단계
         List<String> unregisteredAccounts = new ArrayList<>();
 
-        // 2. 모든 PlayerStats에 대해 롤 계정 등록 여부 검증
         for (PlayerStatsDto playerDto : matchDto.getPlayerStatsList()) {
-
             String gameName = playerDto.getLolGameName();
-            String tagLine = playerDto.getLolTagLine();
+            String tagLine = StringUtils.hasText(playerDto.getLolTagLine()) ? playerDto.getLolTagLine() : "";
 
-            // TagLine이 없으면 빈 문자열로 표준화 (DB 검색 기준 통일)
-            if (!StringUtils.hasText(tagLine)) {
-                tagLine = "";
-            }
-
-            // ⭐ DB에서 롤 계정 찾기 (서버 ID 기준으로 조회)
             Optional<LolAccount> lolAccountOpt = lolAccountRepository.findByGameNameAndTagLineAndGuildServer_DiscordServerId(
                     gameName,
                     tagLine,
-                    discordServerId // ⭐ 서버 ID 인자 추가
+                    discordServerId
             );
 
             if (lolAccountOpt.isEmpty()) {
-                // DB에 없는 계정이 발견됨: 미등록 리스트에 추가
                 unregisteredAccounts.add(gameName + "#" + tagLine);
             }
         }
 
-        // 3. 검증 결과 확인: 미등록 계정이 하나라도 있다면 트랜잭션 취소
+        // 2. 검증 결과 확인 및 예외 발생
         if (!unregisteredAccounts.isEmpty()) {
             String missingList = String.join(", ", unregisteredAccounts);
 
-            // 사용자에게 오류 메시지와 미등록 계정 목록을 보여줍니다.
             throw new IllegalArgumentException(
                     "❌ 오류: 이 서버에 등록되지 않은 롤 계정이 포함되어 있습니다. 먼저 `/register` 명령어로 해당 계정을 등록해 주세요.\n\n" +
                             "**[미등록 계정 목록]**\n" + missingList
             );
         }
 
-        // 4. 검증 완료: 이제 안전하게 MatchRecord 생성 및 PlayerStats 저장
+        // 3. MatchRecord 생성 및 PlayerStats/UserServerStats 저장
         MatchRecord matchRecord = new MatchRecord();
+        // 성능 최적화를 위해 getReference 사용
         GuildServer proxyGuildServer = em.getReference(GuildServer.class, discordServerId);
 
         matchRecord.setGuildServer(proxyGuildServer);
         matchRecord.setWinnerTeam(matchDto.getWinnerTeam());
 
         matchDto.getPlayerStatsList().forEach(playerDto -> {
-            // 검증이 완료되었으므로, lolAccountOpt는 반드시 Present합니다.
-            String gameName = playerDto.getLolGameName();
-            String tagLine = playerDto.getLolTagLine();
-            if (!StringUtils.hasText(tagLine)) tagLine = "";
 
-            // ⭐ DB에서 계정 정보를 다시 가져옴 (서버 ID 포함)
+            String gameName = playerDto.getLolGameName();
+            String tagLine = StringUtils.hasText(playerDto.getLolTagLine()) ? playerDto.getLolTagLine() : "";
+
+            // 계정 재조회 (검증 단계에서 존재 확인했으므로 .get() 사용)
             LolAccount lolAccount = lolAccountRepository.findByGameNameAndTagLineAndGuildServer_DiscordServerId(
-                    gameName,
-                    tagLine,
-                    discordServerId
-            ).get();
+                    gameName, tagLine, discordServerId).get();
 
             // 롤 계정에 연결된 디스코드 유저 (없으면 null)
             User user = lolAccount.getUser();
 
-            // PlayerStats 생성 및 설정
+            // PlayerStats 엔티티 생성 및 설정
             PlayerStats stats = new PlayerStats();
             stats.setUser(user);
             stats.setLolNickname(lolAccount);
@@ -113,10 +101,22 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             boolean isWin = playerDto.getTeam().equalsIgnoreCase(matchDto.getWinnerTeam());
             stats.setIsWin(isWin);
 
+            // MatchRecord와 PlayerStats 연결
             matchRecord.addPlayerStats(stats);
+
+            // ⭐ ⭐ 4. 누적 통계 업데이트 로직 호출 (핵심) ⭐ ⭐
+            // user가 null이 아니어야 통계가 유효합니다.
+            if (user != null) {
+                userServerStatsService.updateStatsAfterMatch(
+                        user.getDiscordUserId(),
+                        discordServerId,
+                        playerDto,
+                        isWin
+                );
+            }
         });
 
-        // 5. MatchRecord 저장
+        // 5. MatchRecord 저장 (PlayerStats도 Cascade로 저장)
         return matchRecordRepository.save(matchRecord);
     }
 }
