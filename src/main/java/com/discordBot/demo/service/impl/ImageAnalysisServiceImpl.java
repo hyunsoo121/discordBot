@@ -124,7 +124,7 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
         String finalWinnerTeam = extractionResult.finalWinnerTeam;
         if (finalWinnerTeam == null || (!finalWinnerTeam.equals("BLUE") && !finalWinnerTeam.equals("RED"))) {
             throw new IllegalArgumentException(
-                    "❌ 오류: 승리팀(BLUE/RED) 확정에 실패했습니다. 이미지 분석 상태: " + extractionResult.analysisStatus
+                    "❌ 오류: 승리팀 확정에 실패했습니다. 이미지 분석 상태: " + extractionResult.analysisStatus
             );
         }
 

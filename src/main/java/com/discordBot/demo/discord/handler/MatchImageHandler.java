@@ -107,15 +107,34 @@ public class MatchImageHandler {
         // 1. 버튼 처리를 위해 데이터를 임시 저장
         pendingConfirmations.put(initiatorId, dto);
 
+        String winnerTeamLabel;
+
+        if (dto.getWinnerTeam().equals("BLUE")) {
+            // BLUE가 이겼고, 1팀이 BLUE였거나 2팀이 BLUE였을 경우를 고려하여 출력
+            winnerTeamLabel = "1팀"; // 또는 "1팀 승리" 등
+        } else {
+            winnerTeamLabel = "2팀";
+        }
+
         // 2. 메시지 본문 생성
         StringBuilder sb = new StringBuilder();
         sb.append("✅ **AI 분석 완료!** 아래 기록이 정확합니까? (업로더만 확인할 수 있습니다)\n\n");
         // ⭐ 수정: winnerTeam은 Gemini 분석 결과입니다.
-        sb.append("🏆 승리팀: **").append(dto.getWinnerTeam()).append("**\n\n");
+        sb.append("🏆 승리팀: **").append(winnerTeamLabel).append("**\n\n");
 
-        // 선수 통계 요약
         dto.getPlayerStatsList().forEach(stats -> {
-            sb.append("`").append(stats.getTeam()).append("` | ");
+
+            // ⭐⭐ 선수 통계 요약 수정: DB 진영(stats.getTeam())을 '1팀' 또는 '2팀'으로 변환
+            String displayTeamLabel;
+            String dbTeamSide = stats.getTeam(); // 'BLUE' 또는 'RED' (DB에 저장될 값)
+
+            if (dbTeamSide.equals("BLUE")) {
+                displayTeamLabel = "1팀";
+            } else {
+                displayTeamLabel = "2팀";
+            }
+
+            sb.append("`").append(displayTeamLabel).append("` | ");
             sb.append(stats.getLolGameName()).append("#").append(stats.getLolTagLine()).append(" | ");
             sb.append("KDA: ").append(stats.getKills()).append("/").append(stats.getDeaths()).append("/").append(stats.getAssists()).append("\n");
         });
