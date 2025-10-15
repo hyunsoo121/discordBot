@@ -31,14 +31,11 @@ public class MatchImageHandler {
     private final MatchRecordService matchRecordService;
     private final LolAccountRepository lolAccountRepository;
 
-    // 버튼 상수
     public static final String BUTTON_ID_CONFIRM = "match-confirm";
     public static final String BUTTON_ID_CANCEL = "match-cancel";
 
-    // 확인 대기 중인 데이터를 위한 임시 저장소
     private final Map<String, MatchRegistrationDto> pendingConfirmations = new ConcurrentHashMap<>();
 
-    // 오래 걸리는 AI 및 DB 작업을 비동기적으로 처리하기 위한 Executor
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
 
 
@@ -47,27 +44,22 @@ public class MatchImageHandler {
      */
     public void handleMatchUploadCommand(SlashCommandInteractionEvent event) {
 
-        // 처리 시간이 길어질 것을 대비하여 즉시 응답을 지연시킵니다.
-        event.deferReply(false).queue();
+        // ⭐ 참고: SlashCommandListener에서 event.deferReply(false)를 이미 호출했다고 가정합니다.
 
-        OptionMapping winnerTeamOption = event.getOption("winner-team");
+        // OptionMapping winnerTeamOption = event.getOption("winner-team"); // ⭐ 제거됨
         OptionMapping imageOption = event.getOption("result-image");
 
-        if (winnerTeamOption == null || imageOption == null) {
-            event.getHook().sendMessage("❌ 오류: 승리팀과 이미지 파일을 모두 제공해야 합니다.").queue();
+        // ⭐ 오류 처리: winner-team 옵션이 제거되었으므로 검사를 imageOption만 합니다.
+        if (imageOption == null) {
+            event.getHook().sendMessage("❌ 오류: 이미지 파일을 첨부해야 합니다.").queue();
             return;
         }
 
-        String winnerTeam = winnerTeamOption.getAsString().toUpperCase();
         Attachment imageAttachment = imageOption.getAsAttachment();
         String initiatorId = event.getUser().getId();
-        Long serverId = event.getGuild().getIdLong(); // ⭐ 현재 서버 ID 획득
+        Long serverId = event.getGuild().getIdLong();
 
         // 1. 기본 유효성 검사
-        if (!winnerTeam.equals("RED") && !winnerTeam.equals("BLUE")) {
-            event.getHook().sendMessage("❌ 오류: 승리팀은 RED 또는 BLUE여야 합니다.").queue();
-            return;
-        }
         if (!imageAttachment.isImage()) {
             event.getHook().sendMessage("❌ 오류: 첨부된 파일이 이미지가 아닙니다.").queue();
             return;
@@ -76,29 +68,30 @@ public class MatchImageHandler {
         // 2. 초기 상태 업데이트
         event.getHook().sendMessage("🔍 이미지를 분석 중입니다. 잠시 기다려 주세요... (AI 처리)").queue();
 
-        // ⭐⭐⭐ 3. 롤 계정 후보 목록 조회 (OCR 힌트 준비) ⭐⭐⭐
-        // DB에 등록된 계정 중 현재 Discord 서버에 연결된 사용자 계정만 가져옵니다.
+        // 3. 롤 계정 후보 목록 조회 (OCR 힌트 준비)
         List<LolAccount> allRegisteredAccounts = lolAccountRepository.findAllByGuildServer_DiscordServerId(serverId);
         log.info("OCR 힌트를 위해 서버 {}에 등록된 계정 {}개를 로드했습니다.", serverId, allRegisteredAccounts.size());
-        // ⭐⭐⭐ OCR 힌트 준비 끝 ⭐⭐⭐
 
         // 4. 별도의 스레드에서 오래 걸리는 AI 프로세스 실행
         executor.execute(() -> {
             try {
-                // imageAnalysisService 호출 시 롤 계정 목록 추가 전달
+                // ⭐ 수정: winnerTeam 인자 제거
                 MatchRegistrationDto resultDto = imageAnalysisService.analyzeAndStructureData(
                         imageAttachment.getUrl(),
-                        winnerTeam,
                         serverId,
-                        allRegisteredAccounts // ⭐ 필터링된 힌트 목록 전달
+                        allRegisteredAccounts
                 );
 
                 // 분석 성공: 확인 메시지 전송
                 sendConfirmationMessage(event.getHook(), resultDto, initiatorId);
 
+            } catch (IllegalArgumentException e) {
+                // ImageAnalysisService에서 던진 '승패 텍스트 없음'과 같은 사용자 오류 처리
+                event.getHook().editOriginal("❌ 분석 오류: " + e.getMessage())
+                        .setComponents()
+                        .queue();
             } catch (Exception e) {
                 log.error("경기 기록 처리 중 오류 발생: {}", e.getMessage(), e);
-                // 오류를 표시하도록 원본 메시지 수정
                 event.getHook().editOriginal("❌ 서버 오류: 이미지 분석 중 예상치 못한 오류가 발생했습니다. 로그를 확인하세요.")
                         .setComponents()
                         .queue();
@@ -114,14 +107,34 @@ public class MatchImageHandler {
         // 1. 버튼 처리를 위해 데이터를 임시 저장
         pendingConfirmations.put(initiatorId, dto);
 
+        String winnerTeamLabel;
+
+        if (dto.getWinnerTeam().equals("BLUE")) {
+            // BLUE가 이겼고, 1팀이 BLUE였거나 2팀이 BLUE였을 경우를 고려하여 출력
+            winnerTeamLabel = "1팀"; // 또는 "1팀 승리" 등
+        } else {
+            winnerTeamLabel = "2팀";
+        }
+
         // 2. 메시지 본문 생성
         StringBuilder sb = new StringBuilder();
         sb.append("✅ **AI 분석 완료!** 아래 기록이 정확합니까? (업로더만 확인할 수 있습니다)\n\n");
-        sb.append("🏆 승리팀: **").append(dto.getWinnerTeam()).append("**\n\n");
+        // ⭐ 수정: winnerTeam은 Gemini 분석 결과입니다.
+        sb.append("🏆 승리팀: **").append(winnerTeamLabel).append("**\n\n");
 
-        // 선수 통계 요약
         dto.getPlayerStatsList().forEach(stats -> {
-            sb.append("`").append(stats.getTeam()).append("` | ");
+
+            // ⭐⭐ 선수 통계 요약 수정: DB 진영(stats.getTeam())을 '1팀' 또는 '2팀'으로 변환
+            String displayTeamLabel;
+            String dbTeamSide = stats.getTeam(); // 'BLUE' 또는 'RED' (DB에 저장될 값)
+
+            if (dbTeamSide.equals("BLUE")) {
+                displayTeamLabel = "1팀";
+            } else {
+                displayTeamLabel = "2팀";
+            }
+
+            sb.append("`").append(displayTeamLabel).append("` | ");
             sb.append(stats.getLolGameName()).append("#").append(stats.getLolTagLine()).append(" | ");
             sb.append("KDA: ").append(stats.getKills()).append("/").append(stats.getDeaths()).append("/").append(stats.getAssists()).append("\n");
         });
@@ -168,7 +181,7 @@ public class MatchImageHandler {
         if (buttonAction.equals(BUTTON_ID_CONFIRM)) {
 
             // DB 저장 로직을 Executor 내부로 이동
-            event.getHook().editOriginal("💾 DB에 기록을 저장 중입니다...").setComponents().queue(); // 사용자에게 저장 중임을 알림
+            event.getHook().editOriginal("💾 DB에 기록을 저장 중입니다...").setComponents().queue();
 
             executor.execute(() -> {
                 try {
@@ -182,7 +195,7 @@ public class MatchImageHandler {
 
                 } catch (IllegalArgumentException e) {
                     event.getHook().editOriginal("❌ 등록 오류: " + e.getMessage() + "\n 기록을 다시 확인해주세요.").setComponents().queue();
-                    pendingConfirmations.put(requiredInitiatorId, finalDto); // DB 오류 시 데이터 복구 (취소/재시도 가능성 대비)
+                    pendingConfirmations.put(requiredInitiatorId, finalDto);
                 } catch (Exception e) {
                     log.error("DB 등록 실패: {}", e.getMessage(), e);
                     event.getHook().editOriginal("❌ 서버 처리 중 예기치 않은 오류가 발생했습니다.").setComponents().queue();

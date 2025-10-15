@@ -2,7 +2,7 @@ package com.discordBot.demo.service.impl;
 
 import com.discordBot.demo.domain.dto.MatchRegistrationDto;
 import com.discordBot.demo.domain.dto.PlayerStatsDto;
-import com.discordBot.demo.domain.entity.LolAccount; // LolAccount 엔티티 임포트
+import com.discordBot.demo.domain.entity.LolAccount;
 import com.discordBot.demo.service.ImageAnalysisService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -45,32 +45,36 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
         this.httpClient = new OkHttpClient();
     }
 
+    // ⭐ 수정 1: JSON 구조 확장 - 상태 및 최종 승리 진영 포함
     private static class JsonExtractionResult {
+        public String analysisStatus; // SUCCESS, FAILURE_NO_VICTORY_TEXT 등
+        public String finalWinnerTeam; // "BLUE" 또는 "RED"
         public List<PlayerStatsDto> players;
     }
 
     @Override
-    public MatchRegistrationDto analyzeAndStructureData(String imageUrl, String winnerTeam, Long serverId, List<LolAccount> registeredAccounts) throws Exception {
+    // winnerTeam 인자 제거
+    public MatchRegistrationDto analyzeAndStructureData(String imageUrl, Long serverId, List<LolAccount> registeredAccounts) throws Exception {
 
-        // 1. 이미지 URL에서 바이트 배열 다운로드
         byte[] imageBytes = downloadImageBytes(imageUrl);
 
-        // ⭐⭐⭐ 2. 프롬프트에 OCR 힌트 목록 추가 ⭐⭐⭐
         String hintList = registeredAccounts.stream()
-                .map(LolAccount::getFullAccountName) // "Faker#KR1" 형태의 전체 이름 리스트 생성
+                .map(LolAccount::getFullAccountName)
                 .collect(Collectors.joining(", "));
 
+        // ⭐ 수정 2: 프롬프트 변경 - 상태 보고 및 승패 확정 로직 요청
         String prompt = String.format(
-                "Please extract the stats for all 10 players from the League of Legends match result screen image. Extract 'gameName', 'tagLine', 'team' (RED/BLUE), 'kills', 'deaths', and 'assists'. If the team is not visible, infer it based on the image's layout. The user specified the winner team is %s. " +
-                        "**IMPORTANT**: The players' Riot IDs in the image are highly likely to be one of the following registered accounts: [%s]. Use this list to correct any OCR errors and accurately report the gameName and tagLine.",
-                winnerTeam, hintList
+                "This is a League of Legends match result screen. Analyze the image to determine the winner based on two factors: 1) The presence of 'Victory' or 'Defeat' text. 2) The background color of Team 1 (Top) and Team 2 (Bottom) to determine their side (Blue/Red). If you cannot clearly read 'Victory' or 'Defeat' text, set analysisStatus to FAILURE_NO_VICTORY_TEXT. Otherwise, set it to SUCCESS and determine the final winning side (BLUE or RED)." +
+                        "Extract 'gameName', 'tagLine', 'team' (RED/BLUE), 'kills', 'deaths', and 'assists' for all 10 players. " +
+                        "**IMPORTANT**: Use the registered accounts list [%s] to correct any OCR errors and accurately map the Riot IDs.",
+                hintList
         );
-        // ⭐⭐⭐ 힌트 추가 끝 ⭐⭐⭐
 
+        // ⭐ 수정 3: System Instruction 변경 - analysisStatus 필드 추가 요구
+        String systemInstructionString =
+                "You are an expert esports match data extraction AI. Your response must be in strict, valid JSON format matching the structure: {\"analysisStatus\":\"string (SUCCESS or FAILURE_NO_VICTORY_TEXT)\", \"finalWinnerTeam\":\"string (BLUE or RED)\", \"players\": [{\"gameName\":\"string\", \"tagLine\":\"string (e.g., KR1)\", \"team\":\"string (RED or BLUE)\", \"kills\":\"integer\", \"deaths\":\"integer\", \"assists\":\"integer\"}, ...]}. Do not include any introductory or explanatory text outside the JSON block. Ensure 10 players are returned. If analysisStatus is FAILURE, finalWinnerTeam should be null or omitted.";
 
-        String systemInstructionString = "You are an expert esports match data extraction AI. Your response must be in strict, valid JSON format matching the structure: {\"players\": [{\"gameName\":\"string\", \"tagLine\":\"string\", \"team\":\"string (RED or BLUE)\", \"kills\":\"integer\", \"deaths\":\"integer\", \"assists\":\"integer\"}, ...]}. Do not include any introductory or explanatory text outside the JSON block. Ensure 10 players are returned.";
-
-        // 3. Content 객체 생성 (프롬프트 + 이미지)
+        // 3. Content 객체 생성 및 API 호출 (이하 로직 유지)
         List<Content> contents = List.of(
                 Content.builder()
                         .parts(List.of(
@@ -80,7 +84,6 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                         .build()
         );
 
-        // 4. Gemini API 호출 설정 (System Instruction 포함)
         Content systemInstructionContent = Content.builder()
                 .parts(List.of(Part.fromText(systemInstructionString)))
                 .build();
@@ -89,11 +92,9 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                 .systemInstruction(systemInstructionContent)
                 .build();
 
-        // 5. Gemini API 호출
         GenerateContentResponse response = geminiClient.models
                 .generateContent(modelName, contents, config);
 
-        // 6. 응답 파싱 및 안전한 Optional 처리
         if (response == null || !response.candidates().isPresent() || response.candidates().get().isEmpty()) {
             throw new Exception("Gemini API에서 유효한 응답을 받지 못했습니다.");
         }
@@ -113,20 +114,31 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
 
         JsonExtractionResult extractionResult = objectMapper.readValue(jsonString, JsonExtractionResult.class);
 
-        // 7. MatchRegistrationDto 조립
+        // ⭐ 수정 4: 핵심 검증 로직 추가 (승패 텍스트 누락 시 예외 발생)
+        if ("FAILURE_NO_VICTORY_TEXT".equals(extractionResult.analysisStatus)) {
+            throw new IllegalArgumentException(
+                    "❌ 오류: 경기 결과 이미지에서 승패 여부를 확인할 수 없습니다. '승리' 또는 '패배' 문구가 보이도록 다시 캡처해주세요."
+            );
+        }
+
+        String finalWinnerTeam = extractionResult.finalWinnerTeam;
+        if (finalWinnerTeam == null || (!finalWinnerTeam.equals("BLUE") && !finalWinnerTeam.equals("RED"))) {
+            throw new IllegalArgumentException(
+                    "❌ 오류: 승리팀 확정에 실패했습니다. 이미지 분석 상태: " + extractionResult.analysisStatus
+            );
+        }
+
+        // 5. MatchRegistrationDto 조립
         MatchRegistrationDto finalDto = new MatchRegistrationDto();
         finalDto.setServerId(serverId);
-        finalDto.setWinnerTeam(winnerTeam);
+        finalDto.setWinnerTeam(finalWinnerTeam);
         finalDto.setPlayerStatsList(extractionResult.players.stream()
-                .map(p -> mapToPlayerStatsDto(p, winnerTeam))
+                .map(p -> mapToPlayerStatsDto(p, finalWinnerTeam))
                 .collect(Collectors.toList()));
 
         return finalDto;
     }
 
-    /**
-     * 이미지 URL에서 데이터를 다운로드하여 바이트 배열로 반환하는 헬퍼 메서드
-     */
     private byte[] downloadImageBytes(String imageUrl) throws IOException {
         Request request = new Request.Builder().url(imageUrl).build();
 
