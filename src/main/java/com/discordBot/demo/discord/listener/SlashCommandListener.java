@@ -41,11 +41,7 @@ public class SlashCommandListener extends ListenerAdapter {
     @Override
     public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
 
-        // 1. 응답 지연 (Deferred Reply)
-        // /rank-check는 본인에게만 보이도록 true로 설정
-        // 나머지 명령어도 대부분 개인 응답이므로 true로 설정
-
-        // ⭐ 수정: 모든 명령에 대해 Ephemeral(true)로 deferReply 호출
+        // ⭐ 수정: 모든 명령어는 Ephemeral(true)로 deferReply 호출
         event.deferReply(true).queue();
 
         try {
@@ -55,11 +51,11 @@ public class SlashCommandListener extends ListenerAdapter {
                     break;
 
                 case "match-upload":
+                    // MatchImageHandler가 deferReply(true)를 따릅니다.
                     imageHandler.handleMatchUploadCommand(event);
                     break;
 
                 case "rank-check":
-                    // ⭐ RankingHandler 내에서 응답을 Ephemeral로 처리하도록 위임
                     rankingHandler.handleRankingCommand(event);
                     break;
 
@@ -72,7 +68,6 @@ public class SlashCommandListener extends ListenerAdapter {
                     break;
 
                 default:
-                    // getHook()은 이미 deferReply(true)를 따릅니다.
                     event.getHook().sendMessage("알 수 없는 커맨드입니다.").queue();
                     break;
             }
@@ -101,7 +96,6 @@ public class SlashCommandListener extends ListenerAdapter {
     private void handleInitData(SlashCommandInteractionEvent event) {
         Member member = event.getMember();
         if (member == null || !member.hasPermission(Permission.ADMINISTRATOR)) {
-            // deferReply(true) 상태이므로 getHook 사용
             event.getHook().sendMessage("❌ 오류: **데이터 초기화** 명령어는 서버 관리자만 사용할 수 있습니다.").queue();
             return;
         }
@@ -162,18 +156,9 @@ public class SlashCommandListener extends ListenerAdapter {
                         .addOption(OptionType.STRING, "lol-nickname", "롤 닉네임과 태그를 '이름#태그' 형식으로 입력하세요 (예: Hide On Bush#KR1)", true)
         );
 
-        OptionData winnerTeamOption = new OptionData(
-                OptionType.STRING,
-                "winner-team",
-                "승리팀을 선택하세요.",
-                true
-        )
-                .addChoice("BLUE 팀 승리", "BLUE")
-                .addChoice("RED 팀 승리", "RED");
-
+        // ⭐ 수정: winner-team OptionData 정의 및 추가 로직 제거 (자동 분석으로 대체)
         commandDataList.add(
                 Commands.slash("match-upload", "경기 결과 이미지로 기록을 등록합니다.")
-                        .addOptions(winnerTeamOption)
                         .addOption(OptionType.ATTACHMENT, "result-image", "경기 결과 스크린샷 이미지", true)
         );
 
