@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import jakarta.persistence.EntityManager;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -32,7 +33,7 @@ public class MatchRecordServiceImpl implements MatchRecordService {
     private final MatchRecordRepository matchRecordRepository;
     private final ServerManagementService serverManagementService;
     private final LolAccountRepository lolAccountRepository;
-    private final UserServerStatsService userServerStatsService; // ⭐ 누적 통계 서비스
+    private final UserServerStatsService userServerStatsService;
     private final EntityManager em;
 
 
@@ -41,10 +42,26 @@ public class MatchRecordServiceImpl implements MatchRecordService {
 
         Long discordServerId = matchDto.getServerId();
 
-        // 서버 존재 확인 (없으면 생성)
+        int duration = matchDto.getGameDurationSeconds();
+        int blueGold = matchDto.getBlueTotalGold();
+        int redGold = matchDto.getRedTotalGold();
+
         serverManagementService.findOrCreateGuildServer(discordServerId);
 
-        // 1. 미등록 계정 검증 단계
+        Optional<MatchRecord> existingMatch = matchRecordRepository
+                .findByGameDurationSecondsAndBlueTotalGoldAndRedTotalGoldAndGuildServer_DiscordServerId(
+                        duration,
+                        blueGold,
+                        redGold,
+                        discordServerId
+                );
+
+        if (existingMatch.isPresent()) {
+            throw new IllegalArgumentException(
+                    "❌ 오류: 이 기록은 이미 등록된 것으로 보입니다. (동일 서버에서 동일 경기 시간, 동일 팀별 골드로 등록된 기록 존재)"
+            );
+        }
+
         List<String> unregisteredAccounts = new ArrayList<>();
 
         for (PlayerStatsDto playerDto : matchDto.getPlayerStatsList()) {
@@ -62,7 +79,6 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             }
         }
 
-        // 2. 검증 결과 확인 및 예외 발생
         if (!unregisteredAccounts.isEmpty()) {
             String missingList = String.join(", ", unregisteredAccounts);
 
@@ -72,27 +88,30 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             );
         }
 
-        // 3. MatchRecord 생성 및 PlayerStats/UserServerStats 저장
         MatchRecord matchRecord = new MatchRecord();
-        // 성능 최적화를 위해 getReference 사용
         GuildServer proxyGuildServer = em.getReference(GuildServer.class, discordServerId);
 
         matchRecord.setGuildServer(proxyGuildServer);
         matchRecord.setWinnerTeam(matchDto.getWinnerTeam());
+        matchRecord.setMatchDate(LocalDateTime.now());
 
+        // ⭐⭐ DTO에서 추출한 필드를 엔티티에 설정
+        matchRecord.setGameDurationSeconds(duration);
+        matchRecord.setBlueTotalGold(blueGold);
+        matchRecord.setRedTotalGold(redGold);
+        // ⭐⭐ 엔티티 필드 설정 끝
+
+        // 4. PlayerStats 및 UserServerStats 저장
         matchDto.getPlayerStatsList().forEach(playerDto -> {
 
             String gameName = playerDto.getLolGameName();
             String tagLine = StringUtils.hasText(playerDto.getLolTagLine()) ? playerDto.getLolTagLine() : "";
 
-            // 계정 재조회 (검증 단계에서 존재 확인했으므로 .get() 사용)
             LolAccount lolAccount = lolAccountRepository.findByGameNameAndTagLineAndGuildServer_DiscordServerId(
                     gameName, tagLine, discordServerId).get();
 
-            // 롤 계정에 연결된 디스코드 유저 (없으면 null)
             User user = lolAccount.getUser();
 
-            // PlayerStats 엔티티 생성 및 설정
             PlayerStats stats = new PlayerStats();
             stats.setUser(user);
             stats.setLolNickname(lolAccount);
@@ -104,11 +123,9 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             boolean isWin = playerDto.getTeam().equalsIgnoreCase(matchDto.getWinnerTeam());
             stats.setIsWin(isWin);
 
-            // MatchRecord와 PlayerStats 연결
             matchRecord.addPlayerStats(stats);
 
-            // ⭐ ⭐ 4. 누적 통계 업데이트 로직 호출 (핵심) ⭐ ⭐
-            // user가 null이 아니어야 통계가 유효합니다.
+            // 누적 통계 업데이트 로직 호출
             if (user != null) {
                 userServerStatsService.updateStatsAfterMatch(
                         user.getDiscordUserId(),
@@ -119,7 +136,7 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             }
         });
 
-        // 5. MatchRecord 저장 (PlayerStats도 Cascade로 저장)
+        // 5. MatchRecord 저장
         return matchRecordRepository.save(matchRecord);
     }
 }
