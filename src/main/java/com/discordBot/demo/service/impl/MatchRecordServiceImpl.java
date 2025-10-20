@@ -2,11 +2,7 @@ package com.discordBot.demo.service.impl;
 
 import com.discordBot.demo.domain.dto.MatchRegistrationDto;
 import com.discordBot.demo.domain.dto.PlayerStatsDto;
-import com.discordBot.demo.domain.entity.GuildServer;
-import com.discordBot.demo.domain.entity.LolAccount;
-import com.discordBot.demo.domain.entity.MatchRecord;
-import com.discordBot.demo.domain.entity.PlayerStats;
-import com.discordBot.demo.domain.entity.User;
+import com.discordBot.demo.domain.entity.*;
 import com.discordBot.demo.domain.repository.LolAccountRepository;
 import com.discordBot.demo.domain.repository.MatchRecordRepository;
 import com.discordBot.demo.service.MatchRecordService;
@@ -42,12 +38,15 @@ public class MatchRecordServiceImpl implements MatchRecordService {
 
         Long discordServerId = matchDto.getServerId();
 
+        // 중복 검사에 필요한 필드 추출
         int duration = matchDto.getGameDurationSeconds();
         int blueGold = matchDto.getBlueTotalGold();
         int redGold = matchDto.getRedTotalGold();
 
+        // 서버 존재 확인 및 중복 검증 단계
         serverManagementService.findOrCreateGuildServer(discordServerId);
 
+        // 매치 중복 검사 (경기 시간 + 팀별 골드)
         Optional<MatchRecord> existingMatch = matchRecordRepository
                 .findByGameDurationSecondsAndBlueTotalGoldAndRedTotalGoldAndGuildServer_DiscordServerId(
                         duration,
@@ -62,8 +61,19 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             );
         }
 
-        List<String> unregisteredAccounts = new ArrayList<>();
+        // KP 계산을 위한 팀 총 킬 수 사전 계산
+        int blueTeamKills = matchDto.getPlayerStatsList().stream()
+                .filter(p -> "BLUE".equalsIgnoreCase(p.getTeam()))
+                .mapToInt(PlayerStatsDto::getKills)
+                .sum();
 
+        int redTeamKills = matchDto.getPlayerStatsList().stream()
+                .filter(p -> "RED".equalsIgnoreCase(p.getTeam()))
+                .mapToInt(PlayerStatsDto::getKills)
+                .sum();
+
+        // 미등록 계정 검증 단계
+        List<String> unregisteredAccounts = new ArrayList<>();
         for (PlayerStatsDto playerDto : matchDto.getPlayerStatsList()) {
             String gameName = playerDto.getLolGameName();
             String tagLine = StringUtils.hasText(playerDto.getLolTagLine()) ? playerDto.getLolTagLine() : "";
@@ -79,6 +89,7 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             }
         }
 
+        // 검증 결과 확인 및 예외 발생
         if (!unregisteredAccounts.isEmpty()) {
             String missingList = String.join(", ", unregisteredAccounts);
 
@@ -88,6 +99,7 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             );
         }
 
+        // MatchRecord 엔티티 생성 및 필드 설정
         MatchRecord matchRecord = new MatchRecord();
         GuildServer proxyGuildServer = em.getReference(GuildServer.class, discordServerId);
 
@@ -95,13 +107,12 @@ public class MatchRecordServiceImpl implements MatchRecordService {
         matchRecord.setWinnerTeam(matchDto.getWinnerTeam());
         matchRecord.setMatchDate(LocalDateTime.now());
 
-        // ⭐⭐ DTO에서 추출한 필드를 엔티티에 설정
+        // 중복 방지 및 통계 필드 설정
         matchRecord.setGameDurationSeconds(duration);
         matchRecord.setBlueTotalGold(blueGold);
         matchRecord.setRedTotalGold(redGold);
-        // ⭐⭐ 엔티티 필드 설정 끝
 
-        // 4. PlayerStats 및 UserServerStats 저장
+        // PlayerStats 및 UserServerStats 저장
         matchDto.getPlayerStatsList().forEach(playerDto -> {
 
             String gameName = playerDto.getLolGameName();
@@ -125,18 +136,23 @@ public class MatchRecordServiceImpl implements MatchRecordService {
 
             matchRecord.addPlayerStats(stats);
 
-            // 누적 통계 업데이트 로직 호출
+            // 현재 플레이어 팀의 총 킬 수 결정 (KP 분모)
+            int playerTeamKills = playerDto.getTeam().equalsIgnoreCase("BLUE") ? blueTeamKills : redTeamKills;
+
+            // 누적 통계 업데이트 로직 호출 (새로운 인자 전달)
             if (user != null) {
                 userServerStatsService.updateStatsAfterMatch(
                         user.getDiscordUserId(),
                         discordServerId,
                         playerDto,
-                        isWin
+                        isWin,
+                        duration,
+                        playerTeamKills
                 );
             }
         });
 
-        // 5. MatchRecord 저장
+        // MatchRecord 저장
         return matchRecordRepository.save(matchRecord);
     }
 }
