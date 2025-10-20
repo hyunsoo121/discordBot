@@ -1,61 +1,59 @@
+// UserRankDto.java (계산 지표 추가 및 from 메서드 로직 확장)
 package com.discordBot.demo.domain.dto;
 
 import com.discordBot.demo.domain.entity.UserServerStats;
 import lombok.Builder;
 import lombok.Getter;
 
-/**
- * 랭킹 목록 또는 개인 통계를 보여주기 위한 DTO.
- * 엔티티의 raw 데이터(Kills, Deaths, Wins)를 가공하여 승률, KDA를 포함합니다.
- */
 @Getter
 @Builder
 public class UserRankDto {
 
-    // ⭐ 디스코드 유저 ID만 사용 (이름은 봇 출력 시 API로 조회 가정)
     private Long discordUserId;
-
-    // 누적 통계
     private int totalGames;
-    private int totalWins;
-    private int totalKills;
-    private int totalDeaths;
-    private int totalAssists;
 
-    // 계산된 지표
-    private double winRate;         // 승률 (0.00 ~ 1.00)
-    private double kda;             // KDA (K+A) / D
+    private double killParticipation; // KP
+    private double gpm;               // 분당 골드
+    private double dpm;               // 분당 피해량
 
-    /**
-     * UserServerStats 엔티티를 기반으로 UserRankDto를 생성하는 팩토리 메서드.
-     */
+    private double kda;
+    private double winRate;
+
     public static UserRankDto from(UserServerStats stats) {
 
-        // ⭐ User 엔티티에서 ID만 가져옵니다. (User가 null일 경우 방지)
         Long userId = stats.getUser() != null ? stats.getUser().getDiscordUserId() : 0L;
 
         int k = stats.getTotalKills();
         int d = stats.getTotalDeaths();
         int a = stats.getTotalAssists();
         int games = stats.getTotalGames();
-        int wins = stats.getTotalWins();
+        int teamKills = stats.getTotalTeamKillsAccumulated(); // 누적 팀 킬
+        long totalGold = stats.getTotalGoldAccumulated();     // 누적 골드
+        long totalDamage = stats.getTotalDamageAccumulated();   // 누적 피해량
+        long duration = stats.getTotalDurationSeconds();       // 누적 시간
 
-        // KDA 계산: (K + A) / D. 데스가 0일 경우 1로 간주
+        // 1. KDA 계산
         double calculatedKda = (double) (k + a) / Math.max(d, 1);
 
-        // 승률 계산
-        double calculatedWinRate = (games > 0) ? (double) wins / games : 0.0;
+        // 2. 승률 계산
+        double calculatedWinRate = (games > 0) ? (double) stats.getTotalWins() / games : 0.0;
+
+        // 3. KP 계산: (Kills + Assists) / Max(1, TeamTotalKills)
+        double calculatedKP = (double) (k + a) / Math.max(teamKills, 1);
+
+        // 4. GPM/DPM 계산: (Total / TotalDuration) * 60 (총 시간이 0이면 0 처리)
+        double totalMinutes = (double) duration / 60.0;
+        double calculatedGPM = (totalMinutes > 0) ? (double) totalGold / totalMinutes : 0.0;
+        double calculatedDPM = (totalMinutes > 0) ? (double) totalDamage / totalMinutes : 0.0;
 
         return UserRankDto.builder()
-                // ⭐ 수정된 부분: ID만 사용
                 .discordUserId(userId)
                 .totalGames(games)
-                .totalWins(wins)
-                .totalKills(k)
-                .totalDeaths(d)
-                .totalAssists(a)
-                .winRate(calculatedWinRate)
                 .kda(calculatedKda)
+                .winRate(calculatedWinRate)
+                .killParticipation(calculatedKP)
+                .gpm(calculatedGPM)
+                .dpm(calculatedDPM)
                 .build();
     }
 }
