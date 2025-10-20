@@ -46,8 +46,6 @@ public class RankingServiceImpl implements RankingService {
                         .thenComparing(UserRankDto::getTotalGames, Comparator.reverseOrder()))
                 .collect(Collectors.toList());
 
-        log.info("랭킹 조회 완료: 서버 ID {}에서 총 {}명의 플레이어가 랭킹에 포함되었습니다.", serverId, rankedList.size());
-
         return rankedList;
     }
 }

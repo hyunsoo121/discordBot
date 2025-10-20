@@ -67,7 +67,7 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                 "This is a League of Legends match result screen. Analyze the image to determine the winner (BLUE/RED), the game duration, and all player stats." +
                         "1. **Winning Side:** Check 'Victory'/'Defeat' text and background colors. If text is missing, set analysisStatus to FAILURE_NO_VICTORY_TEXT. Otherwise, set to SUCCESS and determine finalWinnerTeam (BLUE or RED) and team1Side (BLUE or RED)." +
                         "2. **Duration:** Find the **Total Game Duration** (format Xm Ys) and convert it to total seconds (e.g., 25m 30s -> 1530)." +
-                        "3. **Stats:** Extract stats for all 10 players, including their determined team (RED/BLUE), 'kills', 'deaths', 'assists', **'totalGold'**, and **'totalDamage'**. " +
+                        "3. **Stats:** Extract stats for all 10 players. Note the positions: 'totalDamage' is the second column from the right (often marked with a star *). 'totalGold' is the final column on the far right. Extract 'gameName', 'tagLine', 'team' (RED/BLUE), 'kills', 'deaths', 'assists', **'totalGold' (far right column)**, and **'totalDamage' (second from right)**." +
                         "**IMPORTANT**: Use the registered accounts list [%s] to correct any OCR errors and accurately map the Riot IDs.",
                 hintList
         );
