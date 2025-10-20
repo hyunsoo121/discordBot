@@ -29,7 +29,10 @@ public class UserServerStatsServiceImpl implements UserServerStatsService {
             Long userId,
             Long serverId,
             PlayerStatsDto playerStatsDto,
-            boolean isWin) {
+            boolean isWin,
+            long gameDurationSeconds,
+            int teamTotalKills
+            ) {
 
         // 1. 기존 통계 데이터 조회
         // User ID와 Server ID를 복합키로 사용하여 기존 통계 기록을 찾습니다.
@@ -43,7 +46,11 @@ public class UserServerStatsServiceImpl implements UserServerStatsService {
                 playerStatsDto.getKills(),
                 playerStatsDto.getDeaths(),
                 playerStatsDto.getAssists(),
-                isWin
+                isWin,
+                playerStatsDto.getTotalGold(),
+                playerStatsDto.getTotalDamage(),
+                teamTotalKills,
+                gameDurationSeconds
         );
 
         // 3. 변경 사항 저장

@@ -18,6 +18,9 @@ public interface UserServerStatsService {
             Long userId,
             Long serverId,
             PlayerStatsDto playerStatsDto,
-            boolean isWin
+            boolean isWin,
+            long gameDurationSeconds,
+            int teamTotalKils
+
     );
 }
