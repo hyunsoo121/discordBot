@@ -31,18 +31,20 @@ public class RankingServiceImpl implements RankingService {
                 // 2. 최소 게임 수 필터링
                 .filter(dto -> dto.getTotalGames() >= minGamesThreshold)
 
-                // ⭐ 정렬 기준 적용 (KDA > GPM > KP > DPM > 승률 순으로 가정)
+                // ⭐ 정렬 기준 적용 (승률 > GPM > KP > DPM > 승률 순으로 가정)
                 .sorted(Comparator
-                        // 1순위: KDA (킬/데스/어시스트 효율)
-                        .comparing(UserRankDto::getKda, Comparator.reverseOrder())
-                        // 2순위: GPM (경제력 확보 효율)
+                        // 1순위: 승률 (Win Rate) - 내림차순
+                        .comparing(UserRankDto::getWinRate, Comparator.reverseOrder())
+
+                        // 2순위: KDA - 내림차순 (승률 동점 시)
+                        .thenComparing(UserRankDto::getKda, Comparator.reverseOrder())
+
+                        // 3순위 그룹: GPM, KP, DPM (KDA 동점 시)
                         .thenComparing(UserRankDto::getGpm, Comparator.reverseOrder())
-                        // 3순위: Kill Participation (팀 전투 참여율)
                         .thenComparing(UserRankDto::getKillParticipation, Comparator.reverseOrder())
-                        // 4순위: DPM (피해량 효율)
                         .thenComparing(UserRankDto::getDpm, Comparator.reverseOrder())
-                        // 5순위: 승률 및 게임 수 (최종 동점 처리)
-                        .thenComparing(UserRankDto::getWinRate, Comparator.reverseOrder())
+
+                        // 4순위: 총 게임 수 (Total Games) - 최종 동점 처리
                         .thenComparing(UserRankDto::getTotalGames, Comparator.reverseOrder()))
                 .collect(Collectors.toList());
 
