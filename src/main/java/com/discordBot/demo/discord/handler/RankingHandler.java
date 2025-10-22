@@ -2,6 +2,7 @@ package com.discordBot.demo.discord.handler;
 
 import com.discordBot.demo.domain.dto.UserRankDto;
 import com.discordBot.demo.service.RankingService;
+import com.discordBot.demo.domain.enums.RankingCriterion;
 import lombok.RequiredArgsConstructor;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.entities.MessageEmbed;
@@ -12,6 +13,8 @@ import org.springframework.stereotype.Component;
 
 import java.awt.*;
 import java.util.List;
+import java.util.Arrays; // Arrays 임포트 추가
+import java.util.stream.Collectors; // Collectors 임포트 추가
 
 @Component
 @RequiredArgsConstructor
@@ -20,12 +23,26 @@ public class RankingHandler {
     private final RankingService rankingService;
     private static final int MIN_GAMES_THRESHOLD = 1;
 
-    private static final String SHOW_BUTTON_ID = "show_rank_details";
+    private static final String SORT_BUTTON_ID_PREFIX = "sort_rank_";
 
+    // ⭐ Helper: 모든 정렬 기준 Enum을 목록으로 가져옵니다.
+    private static final List<RankingCriterion> PRIMARY_CRITERIA = Arrays.asList(
+            RankingCriterion.WIN_RATE, RankingCriterion.KDA, RankingCriterion.GAMES
+    );
+    private static final List<RankingCriterion> SECONDARY_CRITERIA = Arrays.asList(
+            RankingCriterion.GPM, RankingCriterion.DPM, RankingCriterion.KP
+    );
+
+
+    /**
+     * '/rank-check' 슬래시 커맨드 진입점: 처음부터 상세 순위표를 전송합니다.
+     */
     public void handleRankingCommand(SlashCommandInteractionEvent event) {
 
         Long discordServerId = event.getGuild().getIdLong();
         String serverName = event.getGuild().getName();
+
+        RankingCriterion currentCriterion = RankingCriterion.WIN_RATE;
 
         List<UserRankDto> rankedList = rankingService.getRankingByKDA(discordServerId, MIN_GAMES_THRESHOLD);
 
@@ -34,75 +51,54 @@ public class RankingHandler {
             return;
         }
 
-        // 1. 초기 요약 Embed 생성
-        MessageEmbed summaryEmbed = createSummaryRankingEmbed(discordServerId, serverName, rankedList);
+        // 1. Embed 생성: 상세 Embed를 호출
+        MessageEmbed detailedEmbed = createDetailedRankingEmbed(discordServerId, serverName, rankedList, currentCriterion);
 
-        // 2. 버튼 생성 (Show Details 버튼)
-        Button showDetailsButton = Button.primary(SHOW_BUTTON_ID + "_" + discordServerId, "🔍 상세 지표 보기");
+        // ⭐⭐ 수정: 6가지 정렬 버튼을 두 ActionRow로 분리하여 생성 ⭐⭐
+        ActionRow sortRow1 = createSortButtonsRow(discordServerId, currentCriterion, PRIMARY_CRITERIA);
+        ActionRow sortRow2 = createSortButtonsRow(discordServerId, currentCriterion, SECONDARY_CRITERIA);
 
-        // 3. 메시지 전송
-        event.getHook().sendMessageEmbeds(summaryEmbed)
-                .setComponents(ActionRow.of(showDetailsButton))
+
+        // 3. 메시지 전송 (두 개의 정렬 버튼 ActionRow 포함)
+        event.getHook().sendMessageEmbeds(detailedEmbed)
+                .setComponents(
+                        sortRow1,
+                        sortRow2
+                )
                 .queue();
     }
 
     // --------------------------------------------------------------------------------
-    // Helper 1: 초기 요약 화면 (승률 프로그레스 바) 생성 메서드
+    // ⭐ Helper: 정렬 버튼 행 생성 (공통 메서드)
     // --------------------------------------------------------------------------------
-    public MessageEmbed createSummaryRankingEmbed(Long discordServerId, String serverName, List<UserRankDto> rankedList) {
-        EmbedBuilder embedBuilder = new EmbedBuilder();
-        embedBuilder.setTitle("🏆 " + serverName + " ⚔️ 내전 랭킹 요약");
-        embedBuilder.setColor(new Color(58, 204, 87));
-        embedBuilder.setDescription("기준: 승률 우선 정렬. 최소 " + MIN_GAMES_THRESHOLD + "경기 이상");
+    private ActionRow createSortButtonsRow(Long serverId, RankingCriterion activeCriterion, List<RankingCriterion> criteria) {
+        List<Button> buttons = criteria.stream()
+                .map(criterion -> {
+                    String buttonId = SORT_BUTTON_ID_PREFIX + criterion.name() + "_" + serverId;
+                    boolean isActive = criterion == activeCriterion;
 
-        StringBuilder rankingDetailsField = new StringBuilder();
-
-        rankingDetailsField.append("`순위| KDA | 승률`\n");
-        rankingDetailsField.append("-----------------------------\n");
-
-        int limit = Math.min(rankedList.size(), 10);
-
-        for (int i = 0; i < limit; i++) {
-            UserRankDto dto = rankedList.get(i);
-
-            String rankSymbol = String.valueOf(i + 1);
-            double winRate = dto.getWinRate() * 100;
-            String progressBar = buildProgressBar(winRate);
-
-            String userMention = String.format("<@%d>", dto.getDiscordUserId());
-
-            String rankFormat = "`%-4s|%5.2f|%s %4.0f%%` %s\n";
-
-            rankingDetailsField.append(
-                    String.format(
-                            rankFormat,
-                            rankSymbol, // ⭐ rankSymbol은 이제 1, 2, 3... 입니다.
-                            dto.getKda(),
-                            progressBar,
-                            winRate,
-                            userMention
-                    )
-            );
-        }
-
-        embedBuilder.addField("✅ 전체 순위표 (요약)", rankingDetailsField.toString(), false);
-        return embedBuilder.build();
+                    return isActive
+                            ? Button.success(buttonId, "🏆 " + criterion.getDisplayName())
+                            : Button.secondary(buttonId, criterion.getDisplayName());
+                })
+                .collect(Collectors.toList());
+        return ActionRow.of(buttons);
     }
 
-
     // --------------------------------------------------------------------------------
-    // ⭐ Helper 2: 상세 화면 (전체 5가지 지표) 생성 메서드
+    // ⭐ Helper: 상세 화면 (전체 5가지 지표) 생성 메서드 (로직 유지)
     // --------------------------------------------------------------------------------
-    public MessageEmbed createDetailedRankingEmbed(Long discordServerId, String serverName, List<UserRankDto> rankedList) {
+    public MessageEmbed createDetailedRankingEmbed(Long discordServerId, String serverName, List<UserRankDto> rankedList, RankingCriterion criterion) {
+        // ... (Embed 생성 및 순위표 포맷팅 로직 유지) ...
         EmbedBuilder embedBuilder = new EmbedBuilder();
         embedBuilder.setTitle("🏆 " + serverName + " ⚔️ 내전 통합 랭킹 순위표 (상세)");
         embedBuilder.setColor(new Color(255, 165, 0));
-        embedBuilder.setDescription("기준: 승률 우선 정렬. 최소 " + MIN_GAMES_THRESHOLD + "경기 이상");
+        embedBuilder.setDescription("기준: **" + criterion.getDisplayName() + "** 우선 정렬. 최소 " + MIN_GAMES_THRESHOLD + "경기 이상");
 
         StringBuilder rankingDetailsField = new StringBuilder();
 
-        rankingDetailsField.append("`순위| KDA | GPM | DPM | 승률| KP  `\n");
-        rankingDetailsField.append("--------------------------------------\n");
+        rankingDetailsField.append("`순위| KDA | GPM | DPM | 승률| KP | 게임수`\n");
+        rankingDetailsField.append("-------------------------------------------\n");
 
         int limit = Math.min(rankedList.size(), 10);
 
@@ -113,8 +109,7 @@ public class RankingHandler {
             String performanceEmoji = (dto.getKda() >= 5.0 && dto.getWinRate() * 100 >= 60.0) ? "🔥" : "";
             String userMention = String.format("<@%d>", dto.getDiscordUserId());
 
-            String rankFormat = "`%-4s|%5.2f|%-5.0f|%-5.0f|%-4.0f%%|%-4.0f%%` %s %s\n";;
-
+            String rankFormat = "`%-4s|%5.2f|%-5.0f|%-5.0f|%-4.0f%%|%-4.0f%%|%4d` %s %s\n";
 
             rankingDetailsField.append(
                     String.format(
@@ -125,6 +120,7 @@ public class RankingHandler {
                             dto.getDpm(),
                             dto.getWinRate() * 100,
                             dto.getKillParticipation() * 100,
+                            dto.getTotalGames(),
                             performanceEmoji,
                             userMention
                     )
@@ -133,16 +129,5 @@ public class RankingHandler {
 
         embedBuilder.addField("📊 전체 순위표 (상세 지표)", rankingDetailsField.toString(), false);
         return embedBuilder.build();
-    }
-
-    private String buildProgressBar(double percentage) {
-        int barLength = 10;
-        int filled = (int) Math.round(percentage / 100.0 * barLength);
-        StringBuilder bar = new StringBuilder();
-
-        for (int i = 0; i < barLength; i++) {
-            bar.append(i < filled ? "█" : "░");
-        }
-        return bar.toString();
     }
 }
