@@ -23,7 +23,6 @@ public class RankingHandler {
     private final RankingService rankingService;
     private static final int MIN_GAMES_THRESHOLD = 1;
 
-    // ⭐ 페이지네이션 관련 상수
     public static final int ITEMS_PER_PAGE = 10;
     private static final String SORT_BUTTON_ID_PREFIX = "sort_rank_";
     public static final String PAGINATION_BUTTON_ID_PREFIX = "page_rank_";
@@ -128,17 +127,42 @@ public class RankingHandler {
     public MessageEmbed createDetailedRankingEmbed(Long discordServerId, String serverName, List<UserRankDto> allRankedList, List<UserRankDto> currentPageList, RankingCriterion criterion, int currentPage, int totalPages) {
         EmbedBuilder embedBuilder = new EmbedBuilder();
         embedBuilder.setTitle("🏆 " + serverName + " ⚔️ 내전 통합 랭킹 순위표 (상세)");
-        embedBuilder.setColor(new Color(255, 165, 0));
+
+        Color embedColor;
+        switch (criterion) {
+            case WIN_RATE:
+                embedColor = new Color(0, 255, 0); // 승률 (초록색): 승리를 강조
+                break;
+            case KDA:
+                embedColor = new Color(255, 69, 0); // KDA (주황-빨강): 개인 역량을 강조
+                break;
+            case GAMES:
+                embedColor = new Color(173, 216, 230); // 게임 수 (연한 파랑): 활동량을 강조
+                break;
+            case GPM:
+                embedColor = new Color(255, 215, 0); // GPM (금색): 골드 수급력을 강조
+                break;
+            case DPM:
+                embedColor = new Color(255, 0, 0); // DPM (빨간색): 딜링 능력을 강조
+                break;
+            case KP:
+                embedColor = new Color(138, 43, 226); // KP (보라색): 팀 기여도를 강조
+                break;
+            default:
+                embedColor = new Color(255, 165, 0); // 기본 (주황색)
+        }
+        embedBuilder.setColor(embedColor); // 설정된 색상을 적용
+
         embedBuilder.setDescription("기준: **" + criterion.getDisplayName() + "** 우선 정렬. 최소 " + MIN_GAMES_THRESHOLD + "경기 이상\n"
                 + "🔎 **총 " + allRankedList.size() + "명**의 랭커 중 **" + currentPage + "/" + totalPages + "페이지** 표시 중");
 
 
         StringBuilder rankingDetailsField = new StringBuilder();
 
-        rankingDetailsField.append("` 순위 | KDA | GPM | DPM | 승률 | K P | 게임 수`\n");
+        rankingDetailsField.append("` 순위 | KDA | GPM | DPM | K P | 승률 | 게임 수`\n");
         rankingDetailsField.append("-------------------------------------------------\n");
 
-        int startRank = (currentPage - 1) * ITEMS_PER_PAGE + 1; // 현재 페이지의 시작 순위
+        int startRank = (currentPage - 1) * ITEMS_PER_PAGE + 1;
 
         for (int i = 0; i < currentPageList.size(); i++) {
             UserRankDto dto = currentPageList.get(i);
@@ -147,7 +171,8 @@ public class RankingHandler {
             String performanceEmoji = (dto.getKda() >= 5.0 && dto.getWinRate() * 100 >= 60.0) ? "🔥" : "";
             String userMention = String.format("<@%d>", dto.getDiscordUserId());
 
-            String rankFormat = "`%-5s|%5.2f|%-5.0f|%-5.0f|%-4.0f%%|%-4.0f%%|%4d` %s %s\n";
+            // KDA 왼쪽 정렬 반영됨: %-5.2f
+            String rankFormat = "`%-5s|%-5.2f|%-5.0f|%-5.0f|%-4.0f%%|%-4.0f%%|%4d` %s %s\n";
 
             rankingDetailsField.append(
                     String.format(
@@ -156,8 +181,8 @@ public class RankingHandler {
                             dto.getKda(),
                             dto.getGpm(),
                             dto.getDpm(),
-                            dto.getWinRate() * 100,
                             dto.getKillParticipation() * 100,
+                            dto.getWinRate() * 100,
                             dto.getTotalGames(),
                             performanceEmoji,
                             userMention
