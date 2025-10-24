@@ -1,6 +1,7 @@
 package com.discordBot.demo.service;
 
 import com.discordBot.demo.domain.dto.UserRankDto;
+import com.discordBot.demo.domain.enums.RankingCriterion;
 
 import java.util.List;
 
@@ -13,4 +14,6 @@ public interface RankingService {
      * @return KDA 순으로 정렬된 UserRankDto 목록
      */
     List<UserRankDto> getRankingByKDA(Long serverId, int minGamesThreshold);
+
+    List<UserRankDto> getRanking(Long serverId, int minGamesThreshold, RankingCriterion criterion);
 }

@@ -50,7 +50,6 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
         public String finalWinnerTeam; // "BLUE" 또는 "RED"
         public String team1Side; // 1팀의 실제 진영 ("BLUE" 또는 "RED")
         public int gameDurationSeconds; // 경기 지속 시간 (초)
-        // 팀별 총 골드는 Gemini에게 직접 요청하지 않고, players 필드의 합산을 통해 서비스에서 계산합니다.
         public List<PlayerStatsDto> players;
     }
 
@@ -63,15 +62,18 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                 .map(LolAccount::getFullAccountName)
                 .collect(Collectors.joining(", "));
 
+        // 프롬프트: 승패, 시간, 골드, 피해량 위치를 명시적으로 지정
         String prompt = String.format(
                 "This is a League of Legends match result screen. Analyze the image to determine the winner (BLUE/RED), the game duration, and all player stats." +
                         "1. **Winning Side:** Check 'Victory'/'Defeat' text and background colors. If text is missing, set analysisStatus to FAILURE_NO_VICTORY_TEXT. Otherwise, set to SUCCESS and determine finalWinnerTeam (BLUE or RED) and team1Side (BLUE or RED)." +
                         "2. **Duration:** Find the **Total Game Duration** (format Xm Ys) and convert it to total seconds (e.g., 25m 30s -> 1530)." +
-                        "3. **Stats:** Extract stats for all 10 players, including their determined team (RED/BLUE), 'kills', 'deaths', 'assists', **'totalGold'**, and **'totalDamage'**. " +
+                        "3. **Stats:** Extract stats for all 10 players. Note the positions: 'totalDamage' is the second column from the right (often marked with a star *). 'totalGold' is the final column on the far right. Extract 'gameName', 'tagLine', 'team' (RED/BLUE), 'kills', 'deaths', 'assists', **'totalGold' (far right column)**, and **'totalDamage' (second from right)**. " +
+                        "**Specific OCR Correction**: If you detect any confusion between the letter 'O' and the number '0', or between the letter 'I' and '1', always assume the letter variant unless the surrounding context is strictly numerical. Correct all player names accordingly." +
                         "**IMPORTANT**: Use the registered accounts list [%s] to correct any OCR errors and accurately map the Riot IDs.",
                 hintList
         );
 
+        // System Instruction: 반환해야 할 JSON 구조를 명시
         String systemInstructionString =
                 "You are an expert esports match data extraction AI. Your response must be in strict, valid JSON format. The structure is: {\"analysisStatus\":\"string (SUCCESS or FAILURE_NO_VICTORY_TEXT)\", \"finalWinnerTeam\":\"string (BLUE or RED)\", \"team1Side\":\"string (BLUE or RED)\", \"gameDurationSeconds\":\"integer\", \"players\": [{\"gameName\":\"string\", \"tagLine\":\"string (e.g., KR1)\", \"team\":\"string (RED or BLUE)\", \"kills\":\"integer\", \"deaths\":\"integer\", \"assists\":\"integer\", \"totalGold\":\"integer\", \"totalDamage\":\"integer\"}, ...]}. Do not include any introductory or explanatory text outside the JSON block. Ensure 10 players are returned. If analysisStatus is FAILURE, finalWinnerTeam and gameDurationSeconds should be null or omitted.";
 
@@ -108,6 +110,12 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                 .flatMap(part -> part.text())
                 .orElseThrow(() -> new Exception("Gemini API 응답에서 JSON 문자열을 찾을 수 없습니다. (응답 구조 오류)"));
 
+        // ⭐⭐ 1. 원본 JSON 응답 로그 출력 (디버깅용) ⭐⭐
+        log.info("--- Gemini RAW JSON Start ---");
+        log.info("{}", rawResponseText);
+        log.info("--- Gemini RAW JSON End ---");
+
+
         String jsonString = rawResponseText
                 .replace("```json", "")
                 .replace("```", "")
@@ -115,7 +123,6 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
 
         JsonExtractionResult extractionResult = objectMapper.readValue(jsonString, JsonExtractionResult.class);
 
-        // ⭐ 수정 4: 필수 검증 로직 및 최종 승리팀 확정 검증
         if ("FAILURE_NO_VICTORY_TEXT".equals(extractionResult.analysisStatus)) {
             throw new IllegalArgumentException(
                     "❌ 오류: 경기 결과 이미지에서 승패 여부를 확인할 수 없습니다. '승리' 또는 '패배' 문구가 보이도록 다시 캡처해주세요."
@@ -131,7 +138,6 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
             );
         }
 
-        // PlayerStatsDto 목록을 순회하며 팀별 골드를 합산합니다.
         int blueTotalGold = extractionResult.players.stream()
                 .filter(p -> "BLUE".equalsIgnoreCase(p.getTeam()))
                 .mapToInt(PlayerStatsDto::getTotalGold)
@@ -142,16 +148,14 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                 .mapToInt(PlayerStatsDto::getTotalGold)
                 .sum();
 
-        // 6. MatchRegistrationDto 조립
         MatchRegistrationDto finalDto = new MatchRegistrationDto();
         finalDto.setServerId(serverId);
         finalDto.setWinnerTeam(finalWinnerTeam);
         finalDto.setTeam1Side(extractionResult.team1Side);
 
-        // 중복 검사에 필요한 필드 설정
         finalDto.setGameDurationSeconds(extractionResult.gameDurationSeconds);
-        finalDto.setBlueTotalGold(blueTotalGold); // 계산된 값
-        finalDto.setRedTotalGold(redTotalGold);   // 계산된 값
+        finalDto.setBlueTotalGold(blueTotalGold);
+        finalDto.setRedTotalGold(redTotalGold);
 
         finalDto.setPlayerStatsList(extractionResult.players.stream()
                 .map(p -> mapToPlayerStatsDto(p, finalWinnerTeam))
