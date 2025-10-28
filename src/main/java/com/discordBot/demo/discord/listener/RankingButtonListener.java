@@ -37,7 +37,7 @@ public class RankingButtonListener extends ListenerAdapter {
                 handleSortButtonClick(event, discordServerId);
             }
         } else if (componentId.startsWith(PAGINATION_BUTTON_ID_PREFIX)) {
-            // ⭐ 페이지네이션 버튼 이벤트
+            // 페이지네이션 버튼 이벤트
             event.deferEdit().queue();
             Long discordServerId = extractServerId(componentId);
             if (discordServerId != null) {

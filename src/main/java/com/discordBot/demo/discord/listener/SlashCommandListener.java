@@ -33,8 +33,6 @@ public class SlashCommandListener extends ListenerAdapter {
     @Override
     public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
 
-        event.deferReply(true).queue();
-
         try {
             switch (event.getName()){
                 case "register":
@@ -47,10 +45,6 @@ public class SlashCommandListener extends ListenerAdapter {
 
                 case "rank-check":
                     rankingHandler.handleRankingCommand(event);
-                    break;
-
-                case "my-info":
-                    event.getHook().sendMessage("**[내 정보] 기능은 아직 구현되지 않았습니다.**").queue();
                     break;
 
                 case "init-data":

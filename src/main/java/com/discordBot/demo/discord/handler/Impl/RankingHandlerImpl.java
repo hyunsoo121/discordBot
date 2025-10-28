@@ -38,6 +38,8 @@ public class RankingHandlerImpl implements RankingHandler {
     @Override
     public void handleRankingCommand(SlashCommandInteractionEvent event) {
 
+        event.deferReply(true).queue();
+
         Long discordServerId = event.getGuild().getIdLong();
         String serverName = event.getGuild().getName();
 

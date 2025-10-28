@@ -35,6 +35,9 @@ public class AdminCommandHandlerImpl implements AdminCommandHandler {
     @Transactional
     public void handleInitDataCommand(SlashCommandInteractionEvent event) {
 
+        event.deferReply(true).queue();
+
+
         Member member = event.getMember();
         if (member == null || !member.hasPermission(Permission.ADMINISTRATOR)) {
             event.getHook().sendMessage("❌ 오류: **데이터 초기화** 명령어는 서버 관리자만 사용할 수 있습니다.").queue();

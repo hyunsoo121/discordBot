@@ -40,7 +40,7 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
     @Override
     public void handleMatchUploadCommand(SlashCommandInteractionEvent event) {
 
-        // SlashCommandListener에서 event.deferReply(true)를 이미 호출했다고 가정합니다.
+        event.deferReply(true).queue();
 
         OptionMapping imageOption = event.getOption("result-image");
 

@@ -22,6 +22,8 @@ public class RegistrationHandlerImpl implements RegistrationHandler {
 
     public void handleRegisterCommand(SlashCommandInteractionEvent event) {
 
+        event.deferReply(true).queue();
+
         Pattern RIOT_ID_PATTERN = Pattern.compile("^(.+)#(.+)$");
 
         Member member = event.getMember();
