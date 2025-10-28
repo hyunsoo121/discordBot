@@ -1,6 +1,6 @@
 package com.discordBot.demo.discord.listener;
 
-import com.discordBot.demo.discord.handler.RankingHandler;
+import com.discordBot.demo.discord.handler.Impl.RankingHandlerImpl;
 import com.discordBot.demo.domain.dto.UserRankDto;
 import com.discordBot.demo.service.RankingService;
 import com.discordBot.demo.domain.enums.RankingCriterion;
@@ -18,7 +18,7 @@ import java.util.List;
 public class RankingButtonListener extends ListenerAdapter {
 
     private final RankingService rankingService;
-    private final RankingHandler rankingHandler;
+    private final RankingHandlerImpl rankingHandler;
 
     private static final String SORT_BUTTON_ID_PREFIX = "sort_rank_";
     private static final String PAGINATION_BUTTON_ID_PREFIX = "page_rank_";
@@ -88,11 +88,11 @@ public class RankingButtonListener extends ListenerAdapter {
             }
 
             // 2. 페이지네이션 정보 계산 및 목록 자르기
-            List<UserRankDto> currentPageList = RankingHandler.getPage(allRankedList, currentPage, RankingHandler.ITEMS_PER_PAGE);
-            int totalPages = RankingHandler.getTotalPages(allRankedList.size(), RankingHandler.ITEMS_PER_PAGE);
+            List<UserRankDto> currentPageList = RankingHandlerImpl.getPage(allRankedList, currentPage, RankingHandlerImpl.ITEMS_PER_PAGE);
+            int totalPages = RankingHandlerImpl.getTotalPages(allRankedList.size(), RankingHandlerImpl.ITEMS_PER_PAGE);
 
             // 3. 메시지 생성
-            MessageEmbed newEmbed = rankingHandler.createDetailedRankingEmbed(discordServerId, event.getGuild().getName(), allRankedList, currentPageList, newCriterion, currentPage, totalPages);
+            MessageEmbed newEmbed = rankingHandler.createDetailedRankingEmbed(event.getGuild().getName(), allRankedList, currentPageList, newCriterion, currentPage, totalPages);
 
             // 4. 버튼 ActionRow 재생성
             ActionRow sortRow1 = rankingHandler.createSortButtonsRow1(discordServerId, newCriterion);
@@ -144,7 +144,7 @@ public class RankingButtonListener extends ListenerAdapter {
                 } catch (Exception e) {
                     // 추출 실패 시 랭킹을 다시 조회하여 totalPages를 계산
                     List<UserRankDto> allListFallback = rankingService.getRanking(discordServerId, MIN_GAMES_THRESHOLD, currentCriterion);
-                    totalPages = RankingHandler.getTotalPages(allListFallback.size(), RankingHandler.ITEMS_PER_PAGE);
+                    totalPages = RankingHandlerImpl.getTotalPages(allListFallback.size(), RankingHandlerImpl.ITEMS_PER_PAGE);
                 }
             }
 
@@ -164,10 +164,10 @@ public class RankingButtonListener extends ListenerAdapter {
             List<UserRankDto> allRankedList = rankingService.getRanking(discordServerId, MIN_GAMES_THRESHOLD, currentCriterion);
 
             // 4. 페이지네이션 정보 계산 및 목록 자르기
-            List<UserRankDto> currentPageList = RankingHandler.getPage(allRankedList, newPage, RankingHandler.ITEMS_PER_PAGE);
+            List<UserRankDto> currentPageList = RankingHandlerImpl.getPage(allRankedList, newPage, RankingHandlerImpl.ITEMS_PER_PAGE);
 
             // 5. 메시지 생성
-            MessageEmbed newEmbed = rankingHandler.createDetailedRankingEmbed(discordServerId, event.getGuild().getName(), allRankedList, currentPageList, currentCriterion, newPage, totalPages);
+            MessageEmbed newEmbed = rankingHandler.createDetailedRankingEmbed(event.getGuild().getName(), allRankedList, currentPageList, currentCriterion, newPage, totalPages);
 
             // 6. 버튼 ActionRow 재생성
             ActionRow sortRow1 = rankingHandler.createSortButtonsRow1(discordServerId, currentCriterion);
