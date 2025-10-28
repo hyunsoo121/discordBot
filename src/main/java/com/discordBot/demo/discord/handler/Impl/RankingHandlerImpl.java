@@ -5,9 +5,11 @@ import com.discordBot.demo.domain.dto.UserRankDto;
 import com.discordBot.demo.service.RankingService;
 import com.discordBot.demo.domain.enums.RankingCriterion;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
+import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.interactions.components.ActionRow;
 import net.dv8tion.jda.api.interactions.components.buttons.Button;
 import org.springframework.stereotype.Component;
@@ -17,6 +19,7 @@ import java.util.List;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class RankingHandlerImpl implements RankingHandler {
@@ -25,8 +28,6 @@ public class RankingHandlerImpl implements RankingHandler {
     private static final int MIN_GAMES_THRESHOLD = 1;
 
     public static final int ITEMS_PER_PAGE = 10;
-    private static final String SORT_BUTTON_ID_PREFIX = "sort_rank_";
-    public static final String PAGINATION_BUTTON_ID_PREFIX = "page_rank_";
 
     private static final List<RankingCriterion> PRIMARY_CRITERIA = Arrays.asList(
             RankingCriterion.WIN_RATE, RankingCriterion.KDA, RankingCriterion.GAMES
@@ -37,17 +38,14 @@ public class RankingHandlerImpl implements RankingHandler {
 
     @Override
     public void handleRankingCommand(SlashCommandInteractionEvent event) {
-
         event.deferReply(true).queue();
 
         Long discordServerId = event.getGuild().getIdLong();
         String serverName = event.getGuild().getName();
 
-        // 초기 설정: KDA 기준으로 정렬 및 1페이지 시작
         RankingCriterion currentCriterion = RankingCriterion.KDA;
         int currentPage = 1;
 
-        // DB에서 전체 랭킹 데이터를 가져옴
         List<UserRankDto> allRankedList = rankingService.getRanking(discordServerId, MIN_GAMES_THRESHOLD, currentCriterion);
 
         if (allRankedList.isEmpty()) {
@@ -55,100 +53,170 @@ public class RankingHandlerImpl implements RankingHandler {
             return;
         }
 
-        // 페이지네이션 정보 계산 및 목록 자르기
         List<UserRankDto> currentPageList = getPage(allRankedList, currentPage, ITEMS_PER_PAGE);
         int totalPages = getTotalPages(allRankedList.size(), ITEMS_PER_PAGE);
 
-
-        // 1. Embed 생성
         MessageEmbed detailedEmbed = createDetailedRankingEmbed(serverName, allRankedList, currentPageList, currentCriterion, currentPage, totalPages);
-
-        // 2. 정렬 버튼 생성
         ActionRow sortRow1 = createSortButtonsRow(discordServerId, currentCriterion, PRIMARY_CRITERIA);
         ActionRow sortRow2 = createSortButtonsRow(discordServerId, currentCriterion, SECONDARY_CRITERIA);
-
-        // 3. 페이지네이션 버튼 생성
         ActionRow paginationRow = createPaginationButtonsRow(discordServerId, currentCriterion, currentPage, totalPages);
 
-
-        // 4. 메시지 전송
         event.getHook().sendMessageEmbeds(detailedEmbed)
-                .setComponents(
-                        sortRow1,
-                        sortRow2,
-                        paginationRow
-                )
+                .setComponents(sortRow1, sortRow2, paginationRow)
                 .queue();
     }
 
-    // --------------------------------------------------------------------------------
-    // ⭐ Helper: 정렬 버튼 행 생성 (공통 메서드)
-    // --------------------------------------------------------------------------------
+    @Override
+    public void handleRankingButtonInteraction(ButtonInteractionEvent event) {
+
+        String componentId = event.getComponentId();
+
+        // 정렬 버튼 이벤트 처리
+        if (componentId.startsWith(RankingHandler.SORT_BUTTON_ID_PREFIX)) {
+            handleSortButtonInternal(event);
+
+            // 페이지네이션 버튼 이벤트 처리
+        } else if (componentId.startsWith(RankingHandler.PAGINATION_BUTTON_ID_PREFIX)) {
+            handlePaginationButtonInternal(event);
+        }
+    }
+
+    private void handleSortButtonInternal(ButtonInteractionEvent event) {
+        try {
+            // 파싱: sort_rank_CRITERION_SERVERID
+            String[] parts = event.getComponentId().split("_");
+            String criterionName = parts[2];
+            Long discordServerId = Long.parseLong(parts[3]);
+
+            RankingCriterion newCriterion = RankingCriterion.valueOf(criterionName);
+            int currentPage = 1;
+
+            List<UserRankDto> allRankedList = rankingService.getRanking(discordServerId, MIN_GAMES_THRESHOLD, newCriterion);
+            if (allRankedList.isEmpty()) return;
+
+            List<UserRankDto> currentPageList = getPage(allRankedList, currentPage, ITEMS_PER_PAGE);
+            int totalPages = getTotalPages(allRankedList.size(), ITEMS_PER_PAGE);
+
+            MessageEmbed newEmbed = createDetailedRankingEmbed(event.getGuild().getName(), allRankedList, currentPageList, newCriterion, currentPage, totalPages);
+            ActionRow sortRow1 = createSortButtonsRow(discordServerId, newCriterion, PRIMARY_CRITERIA);
+            ActionRow sortRow2 = createSortButtonsRow(discordServerId, newCriterion, SECONDARY_CRITERIA);
+            ActionRow paginationRow = createPaginationButtonsRow(discordServerId, newCriterion, currentPage, totalPages);
+
+            event.getHook().editOriginalEmbeds(newEmbed)
+                    .setComponents(sortRow1, sortRow2, paginationRow)
+                    .queue();
+
+        } catch (Exception e) {
+            log.error("정렬 버튼 처리 중 오류 발생: {}", e.getMessage(), e);
+            event.getHook().sendMessage("❌ 정렬 처리 중 오류가 발생했습니다.").setEphemeral(true).queue();
+        }
+    }
+
+    private void handlePaginationButtonInternal(ButtonInteractionEvent event) {
+        try {
+            // 파싱: page_rank_CRITERION_SERVERID_CURRENTPAGE_PAGEACTION
+            String componentId = event.getComponentId();
+            String[] parts = componentId.split("_");
+
+            String criterionName = parts[2];
+            Long discordServerId = Long.parseLong(parts[3]);
+            int currentPage = Integer.parseInt(parts[4]);
+            String pageAction = parts[5];
+
+            RankingCriterion currentCriterion = RankingCriterion.valueOf(criterionName);
+
+            List<UserRankDto> allRankedList = rankingService.getRanking(discordServerId, MIN_GAMES_THRESHOLD, currentCriterion);
+            if (allRankedList.isEmpty()) return;
+
+            int totalPages = getTotalPages(allRankedList.size(), ITEMS_PER_PAGE);
+
+            // 새 페이지 번호 계산
+            int newPage = currentPage;
+            if ("next".equals(pageAction) && currentPage < totalPages) {
+                newPage++;
+            } else if ("prev".equals(pageAction) && currentPage > 1) {
+                newPage--;
+            } else {
+                return;
+            }
+
+            // 메시지 및 버튼 재생성
+            List<UserRankDto> currentPageList = getPage(allRankedList, newPage, ITEMS_PER_PAGE);
+            MessageEmbed newEmbed = createDetailedRankingEmbed(event.getGuild().getName(), allRankedList, currentPageList, currentCriterion, newPage, totalPages);
+            ActionRow sortRow1 = createSortButtonsRow(discordServerId, currentCriterion, PRIMARY_CRITERIA);
+            ActionRow sortRow2 = createSortButtonsRow(discordServerId, currentCriterion, SECONDARY_CRITERIA);
+            ActionRow paginationRow = createPaginationButtonsRow(discordServerId, currentCriterion, newPage, totalPages);
+
+            event.getHook().editOriginalEmbeds(newEmbed)
+                    .setComponents(sortRow1, sortRow2, paginationRow)
+                    .queue();
+
+        } catch (Exception e) {
+            log.error("페이지네이션 버튼 처리 중 오류 발생: {}", e.getMessage(), e);
+            event.getHook().sendMessage("❌ 페이지 처리 중 오류가 발생했습니다.").setEphemeral(true).queue();
+        }
+    }
+
     private ActionRow createSortButtonsRow(Long serverId, RankingCriterion activeCriterion, List<RankingCriterion> criteria) {
-        List<Button> buttons = criteria.stream()
+        return ActionRow.of(criteria.stream()
                 .map(criterion -> {
-                    String buttonId = SORT_BUTTON_ID_PREFIX + criterion.name() + "_" + serverId;
+                    String buttonId = RankingHandler.SORT_BUTTON_ID_PREFIX + criterion.name() + "_" + serverId;
                     boolean isActive = criterion == activeCriterion;
 
                     return isActive
                             ? Button.success(buttonId, "🏆 " + criterion.getDisplayName())
                             : Button.secondary(buttonId, criterion.getDisplayName());
                 })
-                .collect(Collectors.toList());
-        return ActionRow.of(buttons);
+                .collect(Collectors.toList()));
     }
 
-    // --------------------------------------------------------------------------------
-    // ⭐ Helper: 페이지네이션 버튼 행 생성
-    // --------------------------------------------------------------------------------
     private ActionRow createPaginationButtonsRow(Long serverId, RankingCriterion activeCriterion, int currentPage, int totalPages) {
         String criterionName = activeCriterion.name();
 
-        // ID 포맷: page_rank_CRITERION_SERVERID_PAGEACTION
         Button prevButton = Button.primary(
-                        PAGINATION_BUTTON_ID_PREFIX + criterionName + "_" + serverId + "_prev",
+                        RankingHandler.PAGINATION_BUTTON_ID_PREFIX + criterionName + "_" + serverId + "_" + currentPage + "_prev",
                         "◀️ 이전 페이지")
                 .withDisabled(currentPage <= 1);
 
         Button statusButton = Button.secondary("page_status", currentPage + " / " + totalPages)
-                .withDisabled(true); // 클릭 불가
+                .withDisabled(true);
 
         Button nextButton = Button.primary(
-                        PAGINATION_BUTTON_ID_PREFIX + criterionName + "_" + serverId + "_next",
+                        RankingHandler.PAGINATION_BUTTON_ID_PREFIX + criterionName + "_" + serverId + "_" + currentPage + "_next",
                         "다음 페이지 ▶️")
                 .withDisabled(currentPage >= totalPages);
 
         return ActionRow.of(prevButton, statusButton, nextButton);
     }
 
-    public MessageEmbed createDetailedRankingEmbed(String serverName, List<UserRankDto> allRankedList, List<UserRankDto> currentPageList, RankingCriterion criterion, int currentPage, int totalPages) {
+    private MessageEmbed createDetailedRankingEmbed(String serverName, List<UserRankDto> allRankedList, List<UserRankDto> currentPageList, RankingCriterion criterion, int currentPage, int totalPages) {
         EmbedBuilder embedBuilder = new EmbedBuilder();
         embedBuilder.setTitle("🏆 " + serverName + " ⚔️ 내전 통합 랭킹 순위표 (상세)");
 
         Color embedColor;
         switch (criterion) {
             case WIN_RATE:
-                embedColor = new Color(0, 255, 0); // 승률 (초록색): 승리를 강조
+                embedColor = new Color(0, 255, 0);
                 break;
             case KDA:
-                embedColor = new Color(255, 69, 0); // KDA (주황-빨강): 개인 역량을 강조
+                embedColor = new Color(255, 69, 0);
                 break;
             case GAMES:
-                embedColor = new Color(173, 216, 230); // 게임 수 (연한 파랑): 활동량을 강조
+                embedColor = new Color(173, 216, 230);
                 break;
             case GPM:
-                embedColor = new Color(255, 215, 0); // GPM (금색): 골드 수급력을 강조
+                embedColor = new Color(255, 215, 0);
                 break;
             case DPM:
-                embedColor = new Color(255, 0, 0); // DPM (빨간색): 딜링 능력을 강조
+                embedColor = new Color(255, 0, 0);
                 break;
             case KP:
-                embedColor = new Color(138, 43, 226); // KP (보라색): 팀 기여도를 강조
+                embedColor = new Color(138, 43, 226);
                 break;
             default:
-                embedColor = new Color(255, 165, 0); // 기본 (주황색)
+                embedColor = new Color(255, 165, 0);
         }
-        embedBuilder.setColor(embedColor); // 설정된 색상을 적용
+        embedBuilder.setColor(embedColor);
 
         embedBuilder.setDescription("기준: **" + criterion.getDisplayName() + "** 우선 정렬. 최소 " + MIN_GAMES_THRESHOLD + "경기 이상\n"
                 + "🔎 **총 " + allRankedList.size() + "명**의 랭커 중 **" + currentPage + "/" + totalPages + "페이지** 표시 중");
@@ -168,7 +236,6 @@ public class RankingHandlerImpl implements RankingHandler {
             String performanceEmoji = (dto.getKda() >= 5.0 && dto.getWinRate() * 100 >= 60.0) ? "🔥" : "";
             String userMention = String.format("<@%d>", dto.getDiscordUserId());
 
-            // KDA 왼쪽 정렬 반영됨: %-5.2f
             String rankFormat = "`%-5s|%-5.2f|%-5.0f|%-5.0f|%-4.0f%%|%-4.0f%%|%4d` %s %s\n";
 
             rankingDetailsField.append(
@@ -190,6 +257,7 @@ public class RankingHandlerImpl implements RankingHandler {
         embedBuilder.addField("📊 전체 순위표 (상세 지표)", rankingDetailsField.toString(), false);
         return embedBuilder.build();
     }
+
     public static <T> List<T> getPage(List<T> list, int page, int itemsPerPage) {
         int fromIndex = (page - 1) * itemsPerPage;
         if (fromIndex >= list.size()) {
@@ -201,16 +269,5 @@ public class RankingHandlerImpl implements RankingHandler {
     public static int getTotalPages(int totalItems, int itemsPerPage) {
         if (totalItems <= 0) return 0;
         return (int) Math.ceil((double) totalItems / itemsPerPage);
-    }
-    public ActionRow createSortButtonsRow1(Long serverId, RankingCriterion activeCriterion) {
-        return createSortButtonsRow(serverId, activeCriterion, PRIMARY_CRITERIA);
-    }
-
-    public ActionRow createSortButtonsRow2(Long serverId, RankingCriterion activeCriterion) {
-        return createSortButtonsRow(serverId, activeCriterion, SECONDARY_CRITERIA);
-    }
-
-    public ActionRow createPaginationButtonsRowPublic(Long serverId, RankingCriterion activeCriterion, int currentPage, int totalPages) {
-        return createPaginationButtonsRow(serverId, activeCriterion, currentPage, totalPages);
     }
 }
