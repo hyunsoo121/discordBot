@@ -5,15 +5,14 @@ import com.discordBot.demo.domain.dto.PlayerStatsDto;
 import com.discordBot.demo.domain.entity.LolAccount;
 import com.discordBot.demo.service.ImageAnalysisService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties; // ⭐ JsonIgnoreProperties import
 
-// Google GenAI SDK v1.8.0 import
 import com.google.genai.Client;
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.GenerateContentConfig;
 
-// 이미지 다운로드를 위한 okhttp 라이브러리 import
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -21,8 +20,12 @@ import okhttp3.Response;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.core.io.Resource;
+import org.springframework.util.StreamUtils;
+import jakarta.annotation.PostConstruct;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -36,6 +39,16 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
     private final ObjectMapper objectMapper;
     private final OkHttpClient httpClient;
 
+    @Value("classpath:prompts/match_data_prompt.txt")
+    private Resource matchDataPromptResource;
+
+    @Value("classpath:prompts/system_instruction.txt")
+    private Resource systemInstructionResource;
+
+    private String matchDataPromptTemplate;
+    private String systemInstruction;
+
+
     public ImageAnalysisServiceImpl(@Value("${spring.gemini.api.key}") String apiKey) {
         this.geminiClient = Client.builder()
                 .apiKey(apiKey)
@@ -45,11 +58,33 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
         this.httpClient = new OkHttpClient();
     }
 
+    @PostConstruct
+    public void loadPromptTemplates() {
+        try {
+            this.matchDataPromptTemplate = StreamUtils.copyToString(
+                    matchDataPromptResource.getInputStream(),
+                    StandardCharsets.UTF_8
+            );
+
+            this.systemInstruction = StreamUtils.copyToString(
+                    systemInstructionResource.getInputStream(),
+                    StandardCharsets.UTF_8
+            );
+
+            log.info("✅ 프롬프트 템플릿 로드 완료.");
+        } catch (IOException e) {
+            log.error("❌ 리소스 파일 로드 실패: {}", e.getMessage(), e);
+            throw new RuntimeException("프롬프트 파일 초기화 실패", e);
+
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private static class JsonExtractionResult {
-        public String analysisStatus; // SUCCESS, FAILURE_NO_VICTORY_TEXT 등
-        public String finalWinnerTeam; // "BLUE" 또는 "RED"
-        public String team1Side; // 1팀의 실제 진영 ("BLUE" 또는 "RED")
-        public int gameDurationSeconds; // 경기 지속 시간 (초)
+        public String analysisStatus;
+        public String finalWinnerTeam;
+        public String team1Side;
+        public int gameDurationSeconds;
         public List<PlayerStatsDto> players;
     }
 
@@ -62,22 +97,30 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                 .map(LolAccount::getFullAccountName)
                 .collect(Collectors.joining(", "));
 
-        // 프롬프트: 승패, 시간, 골드, 피해량 위치를 명시적으로 지정
-        String prompt = String.format(
-                "This is a League of Legends match result screen. Analyze the image to determine the winner (BLUE/RED), the game duration, and all player stats." +
-                        "1. **Winning Side:** Check 'Victory'/'Defeat' text and background colors. If text is missing, set analysisStatus to FAILURE_NO_VICTORY_TEXT. Otherwise, set to SUCCESS and determine finalWinnerTeam (BLUE or RED) and team1Side (BLUE or RED)." +
-                        "2. **Duration:** Find the **Total Game Duration** (format Xm Ys) and convert it to total seconds (e.g., 25m 30s -> 1530)." +
-                        "3. **Stats:** Extract stats for all 10 players. Note the positions: 'totalDamage' is the second column from the right (often marked with a star *). 'totalGold' is the final column on the far right. Extract 'gameName', 'tagLine', 'team' (RED/BLUE), 'kills', 'deaths', 'assists', **'totalGold' (far right column)**, and **'totalDamage' (second from right)**. " +
-                        "**Specific OCR Correction**: If you detect any confusion between the letter 'O' and the number '0', or between the letter 'I' and '1', always assume the letter variant unless the surrounding context is strictly numerical. Correct all player names accordingly." +
-                        "**IMPORTANT**: Use the registered accounts list [%s] to correct any OCR errors and accurately map the Riot IDs.",
-                hintList
-        );
+        String prompt = String.format(matchDataPromptTemplate, hintList);
 
-        // System Instruction: 반환해야 할 JSON 구조를 명시
-        String systemInstructionString =
-                "You are an expert esports match data extraction AI. Your response must be in strict, valid JSON format. The structure is: {\"analysisStatus\":\"string (SUCCESS or FAILURE_NO_VICTORY_TEXT)\", \"finalWinnerTeam\":\"string (BLUE or RED)\", \"team1Side\":\"string (BLUE or RED)\", \"gameDurationSeconds\":\"integer\", \"players\": [{\"gameName\":\"string\", \"tagLine\":\"string (e.g., KR1)\", \"team\":\"string (RED or BLUE)\", \"kills\":\"integer\", \"deaths\":\"integer\", \"assists\":\"integer\", \"totalGold\":\"integer\", \"totalDamage\":\"integer\"}, ...]}. Do not include any introductory or explanatory text outside the JSON block. Ensure 10 players are returned. If analysisStatus is FAILURE, finalWinnerTeam and gameDurationSeconds should be null or omitted.";
+        GenerateContentResponse response = callGeminiApi(prompt, imageBytes);
 
-        // 3. Content 객체 생성 및 API 호출
+        String rawResponseText = extractRawJsonText(response);
+
+        JsonExtractionResult extractionResult = parseAndValidateJson(rawResponseText);
+
+        return buildFinalMatchDto(extractionResult, serverId);
+    }
+
+
+    private byte[] downloadImageBytes(String imageUrl) throws IOException {
+        Request request = new Request.Builder().url(imageUrl).build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful() || response.body() == null) {
+                throw new IOException("Discord 이미지 다운로드 실패: " + response);
+            }
+            return response.body().bytes();
+        }
+    }
+
+    private GenerateContentResponse callGeminiApi(String prompt, byte[] imageBytes) {
         List<Content> contents = List.of(
                 Content.builder()
                         .parts(List.of(
@@ -88,16 +131,17 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
         );
 
         Content systemInstructionContent = Content.builder()
-                .parts(List.of(Part.fromText(systemInstructionString)))
+                .parts(List.of(Part.fromText(systemInstruction)))
                 .build();
 
         GenerateContentConfig config = GenerateContentConfig.builder()
                 .systemInstruction(systemInstructionContent)
                 .build();
 
-        GenerateContentResponse response = geminiClient.models
-                .generateContent(modelName, contents, config);
+        return geminiClient.models.generateContent(modelName, contents, config);
+    }
 
+    private String extractRawJsonText(GenerateContentResponse response) throws Exception {
         if (response == null || !response.candidates().isPresent() || response.candidates().get().isEmpty()) {
             throw new Exception("Gemini API에서 유효한 응답을 받지 못했습니다.");
         }
@@ -110,17 +154,35 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                 .flatMap(part -> part.text())
                 .orElseThrow(() -> new Exception("Gemini API 응답에서 JSON 문자열을 찾을 수 없습니다. (응답 구조 오류)"));
 
-        // ⭐⭐ 1. 원본 JSON 응답 로그 출력 (디버깅용) ⭐⭐
         log.info("--- Gemini RAW JSON Start ---");
         log.info("{}", rawResponseText);
         log.info("--- Gemini RAW JSON End ---");
-
 
         String jsonString = rawResponseText
                 .replace("```json", "")
                 .replace("```", "")
                 .trim();
 
+        int jsonStartIndex = -1;
+        for (int i = 0; i < jsonString.length(); i++) {
+            char c = jsonString.charAt(i);
+            if (c == '{' || c == '[') {
+                jsonStartIndex = i;
+                break;
+            }
+        }
+
+        if (jsonStartIndex != -1) {
+            jsonString = jsonString.substring(jsonStartIndex);
+        } else {
+            throw new Exception("Gemini 응답에서 유효한 JSON 시작 토큰('{', '[')을 찾을 수 없습니다.");
+        }
+
+
+        return jsonString;
+    }
+
+    private JsonExtractionResult parseAndValidateJson(String jsonString) throws IOException, IllegalArgumentException {
         JsonExtractionResult extractionResult = objectMapper.readValue(jsonString, JsonExtractionResult.class);
 
         if ("FAILURE_NO_VICTORY_TEXT".equals(extractionResult.analysisStatus)) {
@@ -137,6 +199,10 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                     "❌ 오류: 필수 데이터(승리팀, 경기 시간) 추출에 실패했습니다. 이미지 분석 상태: " + extractionResult.analysisStatus
             );
         }
+        return extractionResult;
+    }
+
+    private MatchRegistrationDto buildFinalMatchDto(JsonExtractionResult extractionResult, Long serverId) {
 
         int blueTotalGold = extractionResult.players.stream()
                 .filter(p -> "BLUE".equalsIgnoreCase(p.getTeam()))
@@ -150,32 +216,23 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
 
         MatchRegistrationDto finalDto = new MatchRegistrationDto();
         finalDto.setServerId(serverId);
-        finalDto.setWinnerTeam(finalWinnerTeam);
+        finalDto.setWinnerTeam(extractionResult.finalWinnerTeam);
         finalDto.setTeam1Side(extractionResult.team1Side);
 
         finalDto.setGameDurationSeconds(extractionResult.gameDurationSeconds);
         finalDto.setBlueTotalGold(blueTotalGold);
         finalDto.setRedTotalGold(redTotalGold);
 
+        String finalWinnerTeam = extractionResult.finalWinnerTeam;
         finalDto.setPlayerStatsList(extractionResult.players.stream()
-                .map(p -> mapToPlayerStatsDto(p, finalWinnerTeam))
+                .map(p -> mapToPlayerStatsDto(p))
                 .collect(Collectors.toList()));
 
         return finalDto;
     }
 
-    private byte[] downloadImageBytes(String imageUrl) throws IOException {
-        Request request = new Request.Builder().url(imageUrl).build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (!response.isSuccessful() || response.body() == null) {
-                throw new IOException("Discord 이미지 다운로드 실패: " + response);
-            }
-            return response.body().bytes();
-        }
-    }
-
-    private PlayerStatsDto mapToPlayerStatsDto(PlayerStatsDto extracted, String winnerTeam) {
+    private PlayerStatsDto mapToPlayerStatsDto(PlayerStatsDto extracted) {
         return extracted;
     }
 }

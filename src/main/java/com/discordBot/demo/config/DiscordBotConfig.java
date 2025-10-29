@@ -1,5 +1,6 @@
 package com.discordBot.demo.config;
 
+import com.discordBot.demo.discord.listener.MatchButtonListener;
 import com.discordBot.demo.discord.listener.RankingButtonListener;
 import com.discordBot.demo.discord.listener.SlashCommandListener;
 import lombok.RequiredArgsConstructor;
@@ -17,17 +18,20 @@ public class DiscordBotConfig {
 
     private final SlashCommandListener slashCommandListener;
     private final RankingButtonListener rankingButtonListener;
+    private final MatchButtonListener matchButtonListener;
+
     @Value("${spring.discord.bot.token}")
     private String token;
 
     @Bean
     public JDA discordJDA() throws InterruptedException {
         JDA jda = JDABuilder.createDefault(token)
-                .setActivity(Activity.playing("내전 기록 확인"))
+                .setActivity(Activity.playing("내전 기록을 보관하는 중"))
                 .enableIntents(GatewayIntent.MESSAGE_CONTENT)
                 .addEventListeners(
                         slashCommandListener, // Slash 명령어 처리
-                        rankingButtonListener // 버튼 이벤트 리스너 등록
+                        rankingButtonListener, // 랭킹 버튼 이벤트 리스너 등록
+                        matchButtonListener // 매치 등록/수정 버튼 이벤트 리스너
                 )
                 .build();
 
