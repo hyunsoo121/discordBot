@@ -1,7 +1,6 @@
 package com.discordBot.demo.discord.listener;
 
 import com.discordBot.demo.discord.handler.AdminCommandHandler;
-import com.discordBot.demo.discord.handler.Impl.MatchImageHandlerImpl;
 import com.discordBot.demo.discord.handler.MatchImageHandler;
 import com.discordBot.demo.discord.handler.RankingHandler;
 import com.discordBot.demo.discord.handler.RegistrationHandler;
@@ -9,7 +8,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.dv8tion.jda.api.events.guild.GuildReadyEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
-import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.CommandData;
@@ -77,10 +75,6 @@ public class SlashCommandListener extends ListenerAdapter {
         commandDataList.add(
                 Commands.slash("match-upload", "경기 결과 이미지로 기록을 등록합니다.")
                         .addOption(OptionType.ATTACHMENT, "result-image", "경기 결과 스크린샷 이미지", true)
-        );
-
-        commandDataList.add(
-                Commands.slash("my-info", "내 정보를 보여줍니다")
         );
 
         commandDataList.add(
