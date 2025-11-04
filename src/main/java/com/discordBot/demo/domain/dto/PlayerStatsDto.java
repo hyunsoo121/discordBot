@@ -19,6 +19,7 @@ public class PlayerStatsDto {
     private int deaths;
     private int assists;
 
+    private String assumedLine;
     private int totalGold;
     private int totalDamage;
 }

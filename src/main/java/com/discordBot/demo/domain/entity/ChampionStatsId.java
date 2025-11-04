@@ -19,5 +19,5 @@ public class ChampionStatsId implements Serializable {
 
     private Long user;             // User 엔티티의 ID (Discord User ID)
     private Long guildServer;      // GuildServer 엔티티의 ID (Discord Server ID)
-    private String championName;   // 챔피언 이름 (고유 키의 일부)
+    private Long champion;   // 챔피언 이름 (고유 키의 일부)
 }
