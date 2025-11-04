@@ -15,11 +15,14 @@ public class PlayerStatsDto {
     private String lolTagLine;
 
     private String team;
+
+    @JsonProperty("championName")
+    private String championName;
+
     private int kills;
     private int deaths;
     private int assists;
 
-    private String assumedLine;
     private int totalGold;
     private int totalDamage;
 }

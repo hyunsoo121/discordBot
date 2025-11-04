@@ -2,6 +2,7 @@ package com.discordBot.demo.service;
 
 import com.discordBot.demo.domain.entity.Champion;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface ChampionService {
@@ -18,4 +19,6 @@ public interface ChampionService {
      * @return Champion 엔티티
      */
     Optional<Champion> findChampionByIdentifier(String identifier);
+    List<String> getAllChampionNamesForHint();
+
 }

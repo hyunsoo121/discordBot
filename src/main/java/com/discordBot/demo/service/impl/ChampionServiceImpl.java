@@ -108,4 +108,13 @@ public class ChampionServiceImpl implements ChampionService {
         // 2. Champion Key(영문 고유 키)로 조회
         return championRepository.findByChampionKey(identifier);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<String> getAllChampionNamesForHint() {
+        // ChampionRepository에서 모든 챔피언 엔티티를 조회하고, 이름 필드만 추출합니다.
+        return championRepository.findAll().stream()
+                .map(Champion::getName)
+                .collect(Collectors.toList());
+    }
 }
