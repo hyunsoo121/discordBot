@@ -100,12 +100,14 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
 
     @Override
     public void handleFinalConfirmation(ButtonInteractionEvent event) {
+
         String componentId = event.getComponentId();
         String[] parts = componentId.split(":");
         String buttonAction = parts[0];
         String requiredInitiatorId = parts[1];
         String actualInitiatorId = event.getUser().getId();
 
+        // 1. 권한 확인 및 유효성 검사 (변경 없음)
         if (!requiredInitiatorId.equals(actualInitiatorId)) {
             event.getHook().sendMessage("❌ 권한 오류: 원본 업로더만 이 기록을 확정할 수 있습니다.").setEphemeral(true).queue();
             return;
@@ -118,26 +120,25 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
             return;
         }
 
+        // 2. 로직 실행
         if (buttonAction.equals(MatchImageHandler.BUTTON_ID_CONFIRM)) {
 
             event.getHook().editOriginal("💾 DB에 기록을 저장 중입니다...").setComponents().queue();
 
-            executor.execute(() -> {
-                try {
-                    matchRecordService.registerMatch(finalDto);
+            try {
+                matchRecordService.registerMatch(finalDto); // 동기 실행
 
-                    event.getHook().editOriginal("✅ **최종 등록 완료!** 경기 기록이 성공적으로 저장되었습니다.")
-                            .setComponents()
-                            .queue();
+                event.getHook().editOriginal("✅ **최종 등록 완료!** 경기 기록이 성공적으로 저장되었습니다.")
+                        .setComponents()
+                        .queue();
 
-                } catch (IllegalArgumentException e) {
-                    event.getHook().editOriginal("❌ 등록 오류: " + e.getMessage() + "\n 기록을 다시 확인해주세요.").setComponents().queue();
-                    pendingConfirmations.put(requiredInitiatorId, finalDto);
-                } catch (Exception e) {
-                    log.error("DB 등록 실패: {}", e.getMessage(), e);
-                    event.getHook().editOriginal("❌ 서버 오류: 이미지 분석 중 예상치 못한 오류가 발생했습니다.").setComponents().queue();
-                }
-            });
+            } catch (IllegalArgumentException e) {
+                event.getHook().editOriginal("❌ 등록 오류: " + e.getMessage() + "\n 기록을 다시 확인해주세요.").setComponents().queue();
+                pendingConfirmations.put(requiredInitiatorId, finalDto);
+            } catch (Exception e) {
+                log.error("DB 등록 실패: {}", e.getMessage(), e);
+                event.getHook().editOriginal("❌ 서버 오류: 이미지 분석 중 예상치 못한 오류가 발생했습니다.").setComponents().queue();
+            }
 
         } else if (buttonAction.equals(MatchImageHandler.BUTTON_ID_CANCEL)) {
             event.getHook().editOriginal("🚫 경기 기록 등록이 취소되었습니다. `/match-upload`를 다시 사용해 주세요.").setComponents().queue();
