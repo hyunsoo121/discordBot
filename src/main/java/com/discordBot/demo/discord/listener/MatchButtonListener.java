@@ -19,7 +19,6 @@ public class MatchButtonListener extends ListenerAdapter {
         if (componentId.startsWith(MatchImageHandler.BUTTON_ID_CONFIRM) ||
                 componentId.startsWith(MatchImageHandler.BUTTON_ID_CANCEL)) {
 
-            event.deferEdit().queue();
             matchImageHandler.handleFinalConfirmation(event);
         }
     }
