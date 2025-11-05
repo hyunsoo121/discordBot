@@ -13,7 +13,5 @@ public interface RankingService {
      * @param minGamesThreshold 랭킹에 포함되기 위한 최소 게임 수
      * @return KDA 순으로 정렬된 UserRankDto 목록
      */
-    List<UserRankDto> getRankingByKDA(Long serverId, int minGamesThreshold);
-
     List<UserRankDto> getRanking(Long serverId, int minGamesThreshold, RankingCriterion criterion);
 }

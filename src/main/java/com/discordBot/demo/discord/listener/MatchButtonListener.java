@@ -1,6 +1,6 @@
 package com.discordBot.demo.discord.listener;
 
-import com.discordBot.demo.discord.handler.RankingHandler;
+import com.discordBot.demo.discord.handler.MatchImageHandler;
 import lombok.RequiredArgsConstructor;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
@@ -8,19 +8,18 @@ import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
-public class RankingButtonListener extends ListenerAdapter {
+public class MatchButtonListener extends ListenerAdapter {
 
-    private final RankingHandler rankingHandler;
+    private final MatchImageHandler matchImageHandler;
 
     @Override
     public void onButtonInteraction(ButtonInteractionEvent event) {
         String componentId = event.getComponentId();
 
-        event.deferEdit().queue();
+        if (componentId.startsWith(MatchImageHandler.BUTTON_ID_CONFIRM) ||
+                componentId.startsWith(MatchImageHandler.BUTTON_ID_CANCEL)) {
 
-        if (componentId.startsWith(RankingHandler.SORT_BUTTON_ID_PREFIX) ||
-                componentId.startsWith(RankingHandler.PAGINATION_BUTTON_ID_PREFIX)) {
-            rankingHandler.handleRankingButtonInteraction(event);
+            matchImageHandler.handleFinalConfirmation(event);
         }
     }
 }
