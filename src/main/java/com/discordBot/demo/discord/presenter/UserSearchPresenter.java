@@ -21,7 +21,7 @@ public class UserSearchPresenter {
     private static final DecimalFormat PERCENT_FORMAT = new DecimalFormat("#.##%");
 
     public MessageEmbed createUserStatsEmbed(UserSearchDto statsDto) {
-        return buildStatsEmbed(statsDto, 0); // 첫 페이지 (index 0) 생성
+        return buildStatsEmbed(statsDto, 0);
     }
 
     /**
@@ -39,7 +39,7 @@ public class UserSearchPresenter {
         String accountList = statsDto.getLinkedLolAccounts().stream()
                 .limit(3)
                 .map(name -> String.format("`%s`", name))
-                .collect(Collectors.joining(" ")); // 한 줄에 공백으로 구분
+                .collect(Collectors.joining(" "));
 
         if (statsDto.getLinkedLolAccounts().size() > 3) {
             accountList += String.format(" 외 %d개", statsDto.getLinkedLolAccounts().size() - 3);
@@ -74,15 +74,23 @@ public class UserSearchPresenter {
         if (championsOnPage.isEmpty()) {
             championList = "기록된 챔피언 통계가 없습니다.";
         } else {
-            // 헤더: 챔피언 이름 | 판수 | 승률 | KDA | KP | DPM
-            StringBuilder sb = new StringBuilder("`챔피언 | 판수 | 승률 | KDA | KP | DPM`\n");
+            // ⭐⭐⭐ 수정된 포맷: 줄바꿈을 활용한 안정적인 목록 형식으로 변경 ⭐⭐⭐
+            StringBuilder sb = new StringBuilder();
             for (ChampionSearchDto champ : championsOnPage) {
-                sb.append(String.format("`%-4s | %-4d | %-5s | %-4s | %-3s | %-4s`\n",
-                        champ.getChampionName().length() > 4 ? champ.getChampionName().substring(0, 4) : champ.getChampionName(), // 이름 4글자 제한
+
+                String championName = champ.getChampionName();
+                String winRate = PERCENT_FORMAT.format(champ.getWinRate());
+                String kp = PERCENT_FORMAT.format(champ.getKillParticipation());
+
+                sb.append(String.format(
+                        "**%s** (`%d판`, 승률 %s)\n" +
+                                "   KDA: `%s` | KP: `%s` | GPM: `%s` | DPM: `%s`\n",
+                        championName,
                         champ.getTotalGames(),
-                        PERCENT_FORMAT.format(champ.getWinRate()).replace("%", ""),
+                        winRate,
                         KDA_FORMAT.format(champ.getKda()),
-                        PERCENT_FORMAT.format(champ.getKillParticipation()).replace("%", ""),
+                        kp,
+                        GPM_DPM_FORMAT.format(champ.getGpm()),
                         GPM_DPM_FORMAT.format(champ.getDpm())
                 ));
             }
@@ -97,11 +105,15 @@ public class UserSearchPresenter {
      * 페이지네이션 버튼을 포함한 ActionRow를 생성합니다.
      */
     public ActionRow createPaginationActionRow(int pageIndex, int totalPages, Long discordUserId) {
+
         String baseId = "userstats_" + discordUserId + "_";
 
-        Button prev = Button.primary(baseId + "prev_" + (pageIndex), "⬅️ 이전") // 이전 페이지 인덱스를 포함
+        // ⭐⭐ 수정: ID에 '이동할 목적지 인덱스'를 담습니다. (pageIndex - 1)
+        Button prev = Button.primary(baseId + "prev_" + (pageIndex - 1), "⬅️ 이전")
                 .withDisabled(pageIndex == 0);
-        Button next = Button.primary(baseId + "next_" + (pageIndex), "다음 ➡️") // 현재 페이지 인덱스를 포함
+
+        // ⭐⭐ 수정: ID에 '이동할 목적지 인덱스'를 담습니다. (pageIndex + 1)
+        Button next = Button.primary(baseId + "next_" + (pageIndex + 1), "다음 ➡️")
                 .withDisabled(pageIndex >= totalPages - 1 || totalPages <= 1);
 
         return ActionRow.of(prev, next);

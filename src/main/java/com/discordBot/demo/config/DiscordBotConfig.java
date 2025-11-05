@@ -3,6 +3,7 @@ package com.discordBot.demo.config;
 import com.discordBot.demo.discord.listener.MatchButtonListener;
 import com.discordBot.demo.discord.listener.RankingButtonListener;
 import com.discordBot.demo.discord.listener.SlashCommandListener;
+import com.discordBot.demo.discord.listener.UserButtonListener;
 import lombok.RequiredArgsConstructor;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
@@ -19,6 +20,7 @@ public class DiscordBotConfig {
     private final SlashCommandListener slashCommandListener;
     private final RankingButtonListener rankingButtonListener;
     private final MatchButtonListener matchButtonListener;
+    private final UserButtonListener userButtonListener;
 
     @Value("${spring.discord.bot.token}")
     private String token;
@@ -31,7 +33,8 @@ public class DiscordBotConfig {
                 .addEventListeners(
                         slashCommandListener, // Slash 명령어 처리
                         rankingButtonListener, // 랭킹 버튼 이벤트 리스너 등록
-                        matchButtonListener // 매치 등록/수정 버튼 이벤트 리스너
+                        matchButtonListener, // 매치 등록/수정 버튼 이벤트 리스너
+                        userButtonListener // 유저 검색 버튼 이벤트 리스너
                 )
                 .build();
 
