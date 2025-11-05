@@ -30,7 +30,7 @@ public class MatchImagePresenter {
             String displayTeamLabel = getDisplayTeamLabel(stats.getTeam());
 
             sb.append("`").append(displayTeamLabel).append("` | ");
-            sb.append("**").append(stats.getLolGameName()).append("**").append(" (").append(stats.getChampionName()).append("#").append(stats.getLolTagLine()).append(") | ");
+            sb.append("**").append(stats.getLolGameName()).append("#").append(stats.getLolTagLine()).append("**").append(" (").append(stats.getChampionName()).append(") | ");
             sb.append("KDA: ").append(stats.getKills()).append("/").append(stats.getDeaths()).append("/").append(stats.getAssists()).append("\n");
         });
 
