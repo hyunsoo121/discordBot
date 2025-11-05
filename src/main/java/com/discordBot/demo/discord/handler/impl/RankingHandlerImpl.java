@@ -1,4 +1,4 @@
-package com.discordBot.demo.discord.handler.Impl;
+package com.discordBot.demo.discord.handler.impl;
 
 import com.discordBot.demo.discord.handler.RankingHandler;
 import com.discordBot.demo.discord.presenter.RankingPresenter;

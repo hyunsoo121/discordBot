@@ -1,4 +1,4 @@
-package com.discordBot.demo.discord.handler.Impl;
+package com.discordBot.demo.discord.handler.impl;
 
 import com.discordBot.demo.discord.handler.AdminCommandHandler;
 import com.discordBot.demo.domain.dto.MatchRegistrationDto;
