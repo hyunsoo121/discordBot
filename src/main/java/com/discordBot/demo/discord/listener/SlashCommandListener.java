@@ -93,8 +93,7 @@ public class SlashCommandListener extends ListenerAdapter {
         commandDataList.add(
                 Commands.slash("유저검색", "특정 유저의 내전 지표를 검색합니다.")
                         .addOption(OptionType.USER, "discord-user", "검색할 디스코드 유저를 @멘션하세요.", false)
-                        .addOption(OptionType.STRING, "riot-nickname", "롤 닉네임 (닉네임으로 검색 시 사용)", false)
-                        .addOption(OptionType.STRING, "riot-tag", "롤 태그라인 (태그)", false)
+                        .addOption(OptionType.STRING, "lol-nickname", "검색할 롤 닉네임과 태그를 '이름#태그' 형식으로 입력하세요 (예: Hide On Bush#KR1)", false)
         );
 
         commandDataList.add(

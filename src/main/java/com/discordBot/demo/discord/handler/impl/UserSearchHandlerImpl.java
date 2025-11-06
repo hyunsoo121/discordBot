@@ -24,9 +24,8 @@ public class UserSearchHandlerImpl implements UserSearchHandler {
     private final UserSearchService userSearchService;
     private final UserSearchPresenter userSearchPresenter;
 
-    private static final String COMMAND_NAME = "유저검색"; // SlashCommandListener에서 정의된 이름으로 가정
+    private static final String COMMAND_NAME = "유저검색";
     private static final int CHAMPIONS_PER_PAGE = 5;
-    private static final String ID_PREFIX = "userstats_"; // Presenter에서 사용된 접두사
 
     @Override
     public void handleUserStatsCommand(SlashCommandInteractionEvent event) {
@@ -36,8 +35,7 @@ public class UserSearchHandlerImpl implements UserSearchHandler {
         event.deferReply(true).queue();
 
         OptionMapping discordUserOption = event.getOption("discord-user");
-        OptionMapping nicknameOption = event.getOption("riot-nickname");
-        OptionMapping tagOption = event.getOption("riot-tag");
+        OptionMapping lolNicknameOption = event.getOption("lol-nickname"); // ⭐ 새 옵션 추가
 
         Long serverId = event.getGuild().getIdLong();
         Long targetDiscordUserId = null;
@@ -45,29 +43,39 @@ public class UserSearchHandlerImpl implements UserSearchHandler {
         String discordMention = null;
 
         try {
-            // ... (검색 및 데이터 로딩 로직 유지) ...
             if (discordUserOption != null) {
+                // CASE 1: Discord User 멘션 검색 (기존 로직 유지)
                 User discordUser = discordUserOption.getAsUser();
                 targetDiscordUserId = discordUser.getIdLong();
                 discordMention = discordUser.getAsMention();
 
                 statsDtoOpt = userSearchService.searchUserInternalStatsByDiscordId(targetDiscordUserId, serverId);
 
-            } else if (nicknameOption != null && tagOption != null) {
-                String summonerName = nicknameOption.getAsString();
-                String tagLine = tagOption.getAsString();
+            } else if (lolNicknameOption != null) { // ⭐ 조건 변경: lolNicknameOption만 확인
+
+                String fullRiotId = lolNicknameOption.getAsString();
+                String[] parts = fullRiotId.split("#");
+
+                if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank()) {
+                    // Riot ID 형식이 올바르지 않은 경우
+                    event.getHook().sendMessage("❌ 오류: Riot ID 형식이 올바르지 않습니다. '닉네임#태그' 형식으로 입력해주세요.").setEphemeral(true).queue();
+                    return;
+                }
+
+                String summonerName = parts[0].trim();
+                String tagLine = parts[1].trim();
 
                 statsDtoOpt = userSearchService.searchUserInternalStatsByRiotId(summonerName, tagLine, serverId);
 
                 if (statsDtoOpt.isPresent()) {
                     UserSearchDto stats = statsDtoOpt.get();
                     targetDiscordUserId = stats.getDiscordUserId();
-                    // 동기 호출 방지: DB에서 ID를 가져왔으므로 수동 멘션 생성
+                    // DB에서 ID를 가져왔으므로 수동 멘션 생성
                     discordMention = "<@" + targetDiscordUserId + ">";
                 }
 
             } else {
-                event.getHook().sendMessage("❌ 오류: 검색할 디스코드 유저를 멘션하거나, Riot ID (닉네임과 태그)를 입력해야 합니다.").setEphemeral(true).queue();
+                event.getHook().sendMessage("❌ 오류: 검색할 디스코드 유저를 멘션하거나, Riot ID ('닉네임#태그')를 입력해야 합니다.").setEphemeral(true).queue();
                 return;
             }
 
@@ -118,7 +126,6 @@ public class UserSearchHandlerImpl implements UserSearchHandler {
 
             Long discordUserId = Long.parseLong(parts[1]);
 
-            // ⭐ 핵심 수정: 버튼 ID에서 이동할 목적지 인덱스(새 페이지 인덱스)를 바로 추출
             int newPageIndex = Integer.parseInt(parts[3]);
 
             Long serverId = event.getGuild().getIdLong();
