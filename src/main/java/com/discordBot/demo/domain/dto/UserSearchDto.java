@@ -4,12 +4,11 @@ import com.discordBot.demo.domain.enums.RankingCriterion;
 import lombok.Builder;
 import lombok.Getter;
 
-import java.util.List; // List 임포트 추가
+import java.util.List;
 import java.util.Map;
 
 /**
- * '/search' 명령어의 최종 결과 DTO.
- * Riot 랭크 정보와 내전 통계 및 지표별 순위를 통합합니다.
+ * '/user-stats' 명령어의 최종 결과 DTO.
  */
 @Getter
 @Builder
@@ -18,9 +17,12 @@ public class UserSearchDto {
     // Discord 및 LoL 식별 정보
     private Long discordUserId;
     private String summonerName;
-    private String lolTagLine; // Riot API에서 가져온 TagLine을 저장할 필드 추가 (검색 결과 명확화를 위해)
+    private String lolTagLine;
 
-    // ⭐ 1. 라이엇 공식 랭크 정보 (Riot API)
+    // ⭐ 추가: 연결된 모든 롤 계정 목록 (GameName#TagLine 형식)
+    private List<String> linkedLolAccounts;
+
+    // ⭐ 1. 라이엇 공식 랭크 정보 (내전 지표 검색에서는 N/A)
     private String soloRankTier;
     private String flexRankTier;
 

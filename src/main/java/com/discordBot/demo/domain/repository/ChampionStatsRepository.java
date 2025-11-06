@@ -14,19 +14,20 @@ import java.util.Optional;
 public interface ChampionStatsRepository extends JpaRepository<ChampionStats, ChampionStatsId> {
 
     /**
-     * 특정 유저의 특정 서버 내 모든 챔피언 통계를 조회합니다.
-     * (기존 findUserAllChampionStats 쿼리 유지)
+     * 특정 유저의 특정 서버 내 모든 챔피언 통계를 조회합니다. (UserSearchService에서 사용)
+     */
+    List<ChampionStats> findAllByUser_DiscordUserIdAndGuildServer_DiscordServerId(Long userId, Long serverId);
+
+
+    /**
+     * 기존 findUserAllChampionStats 쿼리 유지
      */
     @Query("SELECT c FROM ChampionStats c WHERE c.user.discordUserId = :userId AND c.guildServer.discordServerId = :serverId")
     List<ChampionStats> findUserAllChampionStats(@Param("userId") Long userId, @Param("serverId") Long serverId);
 
 
     /**
-     * 이 메서드는 ChampionStatsServiceImpl의 update 로직에서 사용됩니다.
-     * @param userId Discord User ID
-     * @param serverId Discord Server ID
-     * @param championId Champion 엔티티의 ID
-     * @return ChampionStats Optional 객체
+     * ChampionStatsServiceImpl의 update 로직에서 사용됩니다.
      */
     @Query("SELECT c FROM ChampionStats c WHERE c.user.discordUserId = :userId " +
             "AND c.guildServer.discordServerId = :serverId " +

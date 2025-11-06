@@ -1,4 +1,3 @@
-// UserRankDto.java (계산 지표 추가 및 from 메서드 로직 확장)
 package com.discordBot.demo.domain.dto;
 
 import com.discordBot.demo.domain.entity.UserServerStats;
@@ -27,10 +26,10 @@ public class UserRankDto {
         int d = stats.getTotalDeaths();
         int a = stats.getTotalAssists();
         int games = stats.getTotalGames();
-        int teamKills = stats.getTotalTeamKillsAccumulated(); // 누적 팀 킬
-        long totalGold = stats.getTotalGoldAccumulated();     // 누적 골드
-        long totalDamage = stats.getTotalDamageAccumulated();   // 누적 피해량
-        long duration = stats.getTotalDurationSeconds();       // 누적 시간
+        int teamKills = stats.getTotalTeamKillsAccumulated();
+        long totalGold = stats.getTotalGoldAccumulated();
+        long totalDamage = stats.getTotalDamageAccumulated();
+        long duration = stats.getTotalDurationSeconds();
 
         // 1. KDA 계산
         double calculatedKda = (double) (k + a) / Math.max(d, 1);

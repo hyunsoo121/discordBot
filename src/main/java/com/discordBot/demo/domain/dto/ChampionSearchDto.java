@@ -6,7 +6,6 @@ import lombok.Getter;
 
 /**
  * 특정 유저의 특정 챔피언에 대한 통계 지표 DTO.
- * UserSearchDto에 포함되어 챔피언별 통계를 표시하는 데 사용됩니다.
  */
 @Getter
 @Builder
@@ -15,7 +14,7 @@ public class ChampionSearchDto {
     private String championName;
     private int totalGames;
 
-    // ⭐ 계산된 통계 지표
+    // 계산된 통계 지표
     private double kda;
     private double winRate;
     private double killParticipation; // KP
@@ -51,7 +50,6 @@ public class ChampionSearchDto {
         double calculatedDPM = (totalMinutes > 0) ? (double) totalDamage / totalMinutes : 0.0;
 
         return ChampionSearchDto.builder()
-                // ⭐ 챔피언 이름은 Champion 엔티티에서 가져옵니다. (FK 관계 가정)
                 .championName(stats.getChampion().getName())
                 .totalGames(games)
                 .kda(calculatedKda)
