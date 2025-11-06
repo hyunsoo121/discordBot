@@ -33,7 +33,6 @@ public class ChampionStatsServiceImpl implements ChampionStatsService {
     @Transactional
     public void updateChampionStats(
             String championName,
-            String assumedLine,
             Long userId,
             Long serverId,
             PlayerStatsDto playerStatsDto,
@@ -49,10 +48,11 @@ public class ChampionStatsServiceImpl implements ChampionStatsService {
         User user = userRepository.findByDiscordUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("❌ 사용자 ID를 찾을 수 없습니다: " + userId));
 
+        // GuildServer는 Proxy를 사용해도 되지만, 통일성을 위해 findOrCreate 사용
         GuildServer guildServer = serverManagementService.findOrCreateGuildServer(serverId);
 
-        // 3. 기존 ChampionStats 레코드 조회 (복합 키 JPQL)
-        // NOTE: findChampionStatsByCompositeKeys는 Repository에 JPQL로 정의되어야 합니다.
+        // 3. 기존 ChampionStats 레코드 조회
+        // NOTE: findChampionStatsByCompositeKeys는 Repository에 JPQL로 정의되어 있어야 합니다.
         ChampionStats stats = championStatsRepository.findChampionStatsByCompositeKeys(
                 userId,
                 serverId,
@@ -64,7 +64,7 @@ public class ChampionStatsServiceImpl implements ChampionStatsService {
                 playerStatsDto.getKills(), playerStatsDto.getDeaths(), playerStatsDto.getAssists(),
                 isWin,
                 playerStatsDto.getTotalGold(), playerStatsDto.getTotalDamage(),
-                teamTotalKills, gameDurationSeconds
+                teamTotalKills, gameDurationSeconds // DPM, GPM, KP 계산에 필요한 데이터 전달
         );
 
         championStatsRepository.save(stats);

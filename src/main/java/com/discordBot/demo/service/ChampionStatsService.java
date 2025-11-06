@@ -20,7 +20,6 @@ public interface ChampionStatsService {
      */
     void updateChampionStats(
             String championName,
-            String assumedLine,
             Long userId,
             Long serverId,
             PlayerStatsDto playerStatsDto,

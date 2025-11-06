@@ -8,7 +8,8 @@ import com.discordBot.demo.domain.repository.MatchRecordRepository;
 import com.discordBot.demo.service.MatchRecordService;
 import com.discordBot.demo.service.ServerManagementService;
 import com.discordBot.demo.service.UserServerStatsService;
-import com.discordBot.demo.service.ChampionStatsService; // ⭐ ChampionStatsService 임포트
+import com.discordBot.demo.service.ChampionStatsService;
+import com.discordBot.demo.service.LineStatsService; // ⭐ LineStatsService 임포트
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,7 +32,8 @@ public class MatchRecordServiceImpl implements MatchRecordService {
     private final ServerManagementService serverManagementService;
     private final LolAccountRepository lolAccountRepository;
     private final UserServerStatsService userServerStatsService;
-    private final ChampionStatsService championStatsService; // ⭐ ChampionStatsService 주입
+    private final ChampionStatsService championStatsService;
+    private final LineStatsService lineStatsService; // ⭐ LineStatsService 주입
     private final EntityManager em;
 
 
@@ -45,10 +47,10 @@ public class MatchRecordServiceImpl implements MatchRecordService {
         int blueGold = matchDto.getBlueTotalGold();
         int redGold = matchDto.getRedTotalGold();
 
-        // 1. 서버 존재 확인 및 중복 검증 단계
+        // 1. 서버 존재 확인 및 중복 검증 단계 (로직 유지)
         serverManagementService.findOrCreateGuildServer(discordServerId);
 
-        // 1-1. 매치 중복 검사 (생략 없이 유지)
+        // 1-1. 매치 중복 검사 (로직 유지)
         Optional<MatchRecord> existingMatch = matchRecordRepository
                 .findByGameDurationSecondsAndBlueTotalGoldAndRedTotalGoldAndGuildServer_DiscordServerId(
                         duration,
@@ -63,7 +65,7 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             );
         }
 
-        // 1-2. KP 계산을 위한 팀 총 킬 수 사전 계산
+        // 1-2. KP 계산을 위한 팀 총 킬 수 사전 계산 (로직 유지)
         int blueTeamKills = matchDto.getPlayerStatsList().stream()
                 .filter(p -> "BLUE".equalsIgnoreCase(p.getTeam()))
                 .mapToInt(PlayerStatsDto::getKills)
@@ -74,7 +76,7 @@ public class MatchRecordServiceImpl implements MatchRecordService {
                 .mapToInt(PlayerStatsDto::getKills)
                 .sum();
 
-        // 2. 미등록 계정 검증 단계 (기존 로직 유지)
+        // 2. 미등록 계정 검증 단계 (로직 유지)
         List<String> unregisteredAccounts = new ArrayList<>();
         for (PlayerStatsDto playerDto : matchDto.getPlayerStatsList()) {
             String gameName = playerDto.getLolGameName();
@@ -97,7 +99,7 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             );
         }
 
-        // 3. MatchRecord 엔티티 생성 및 필드 설정
+        // 3. MatchRecord 엔티티 생성 및 필드 설정 (로직 유지)
         MatchRecord matchRecord = new MatchRecord();
         GuildServer proxyGuildServer = em.getReference(GuildServer.class, discordServerId);
 
@@ -120,7 +122,7 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             User user = lolAccount.getUser();
             int playerTeamKills = playerDto.getTeam().equalsIgnoreCase("BLUE") ? blueTeamKills : redTeamKills;
 
-            // PlayerStats 엔티티 생성 및 설정
+            // PlayerStats 엔티티 생성 및 설정 (챔피언, 라인 FK 설정 로직 추가 필요)
             PlayerStats stats = new PlayerStats();
             stats.setUser(user);
             stats.setLolNickname(lolAccount);
@@ -129,8 +131,16 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             stats.setDeaths(playerDto.getDeaths());
             stats.setAssists(playerDto.getAssists());
 
+            // ⭐ DPM/GPM 필드 설정 추가
+            stats.setTotalGold(playerDto.getTotalGold());
+            stats.setTotalDamage(playerDto.getTotalDamage());
+            stats.setDurationSeconds(playerDto.getDurationSeconds());
+
+
             boolean isWin = playerDto.getTeam().equalsIgnoreCase(matchDto.getWinnerTeam());
             stats.setIsWin(isWin);
+
+            // TODO: stats.setChampion()과 stats.setLine() 호출 필요
 
             matchRecord.addPlayerStats(stats);
 
@@ -147,8 +157,17 @@ public class MatchRecordServiceImpl implements MatchRecordService {
 
                 // ⭐⭐ 4-2. ChampionStats 업데이트 (챔피언별 통계)
                 championStatsService.updateChampionStats(
-                        playerDto.getChampionName(), // ⭐ OCR로 추출된 챔피언 이름 전달
-                        null, // assumedLine 필드는 현재 사용하지 않음
+                        playerDto.getChampionName(),
+                        user.getDiscordUserId(),
+                        discordServerId,
+                        playerDto,
+                        isWin,
+                        (long) duration,
+                        playerTeamKills
+                );
+
+                // ⭐⭐ 4-3. LineStats 업데이트 (라인별 통계)
+                lineStatsService.updateLineStats(
                         user.getDiscordUserId(),
                         discordServerId,
                         playerDto,
