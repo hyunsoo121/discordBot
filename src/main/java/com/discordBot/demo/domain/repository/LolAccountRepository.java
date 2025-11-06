@@ -2,6 +2,8 @@ package com.discordBot.demo.domain.repository;
 
 import com.discordBot.demo.domain.entity.LolAccount;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -15,8 +17,10 @@ public interface LolAccountRepository extends JpaRepository<LolAccount, Long> {
             Long discordServerId
     );
 
-    // 2. OCR 힌트 제공을 위한 서버별 전체 조회 (기존 로직 유지)
-    List<LolAccount> findAllByGuildServer_DiscordServerId(Long serverId);
+    @Query("SELECT DISTINCT la FROM LolAccount la " +
+            "LEFT JOIN FETCH la.preferredLines " + // ⭐ EAGER 로드 추가
+            "WHERE la.guildServer.discordServerId = :serverId")
+    List<LolAccount> findAllByGuildServer_DiscordServerId(@Param("serverId") Long serverId);
 
     // ⭐ 3. Riot ID (GameName+TagLine)만으로 LolAccount를 조회 (UserSearchService에서 사용)
     Optional<LolAccount> findByGameNameAndTagLine(String gameName, String tagLine);

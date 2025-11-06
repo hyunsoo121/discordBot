@@ -84,11 +84,11 @@ public class AdminCommandHandlerImpl implements AdminCommandHandler {
         try {
             // ⭐ Test 전용 메서드를 사용하거나, 유효한 계정을 사용해야 합니다.
             // 현재는 유효한 계정을 사용한다고 가정하고 registerLolNickname 호출
-            userService.registerLolNickname(userFaker.getDiscordUserId(), "HEKSIS", "KR1", currentServerId);
-            userService.registerLolNickname(userGuma.getDiscordUserId(), "HEKSISE", "KR1", currentServerId);
-            userService.registerLolNickname(userOner.getDiscordUserId(), "SISKEH", "KR1", currentServerId);
-            userService.registerLolNickname(userKeria.getDiscordUserId(), "게자리", "KR1", currentServerId);
-            userService.registerLolNickname(userZeus.getDiscordUserId(), "블루애나", "KR1", currentServerId);
+            userService.registerLolNickname(userFaker.getDiscordUserId(), "HEKSIS", "KR1", currentServerId, "TOP");
+            userService.registerLolNickname(userGuma.getDiscordUserId(), "HEKSISE", "KR1", currentServerId, "JUNGLE");
+            userService.registerLolNickname(userOner.getDiscordUserId(), "SISKEH", "KR1", currentServerId, "MID");
+            userService.registerLolNickname(userKeria.getDiscordUserId(), "게자리", "KR1", currentServerId, "BOT");
+            userService.registerLolNickname(userZeus.getDiscordUserId(), "블루애나", "KR1", currentServerId, "SUP");
 
             userRepository.flush();
 

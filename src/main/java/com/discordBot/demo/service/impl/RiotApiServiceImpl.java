@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors; // Collectors import
 
 @Service
 @Slf4j
@@ -25,27 +26,27 @@ public class RiotApiServiceImpl implements RiotApiService {
     private WebClient webClient;
     private WebClient dataDragonWebClient;
 
-    // @Value 필드는 그대로 유지
     @Value("${spring.riot.api.key}")
     private String apiKey;
 
-    // WebClient의 기본 URL 상수를 클래스 내부에 정의
     private static final String RIOT_API_BASE_URL = "https://asia.api.riotgames.com";
     private static final String DDRAGON_BASE_URL = "https://ddragon.leagueoflegends.com";
-
-    // Riot Account API Endpoints
     private static final String ACCOUNT_BY_RIOT_ID_PATH = "/riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine}";
 
-    // Data Dragon 응답 구조
+    // ⭐ Data Dragon 상수 추가
+    private static final String SMITE_SPELL_KEY = "SummonerSmite";
+    private static final List<String> SUPPORT_ITEM_IDS = List.of(
+            "3865", "3866", "3867", "3869", "3870", "3871", "3876", "3877"
+    );
+    // URL 형식: base/cdn/version/img/type/file.png
+    private static final String ICON_PATH_FORMAT = "/cdn/%s/img/%s/%s.png";
+
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     private static class DataDragonResponse {
         public Map<String, Champion> data;
     }
 
-    /**
-     * ⭐ Spring Bean으로 등록 시 호출되는 명시적 생성자
-     * WebClient 인스턴스를 직접 생성하여 필드를 초기화합니다.
-     */
     public RiotApiServiceImpl() {
         this.webClient = WebClient.builder()
                 .baseUrl(RIOT_API_BASE_URL)
@@ -57,10 +58,6 @@ public class RiotApiServiceImpl implements RiotApiService {
                 .build();
     }
 
-
-    // --------------------------------------------------------------------------------
-    // 1. Riot Account API
-    // --------------------------------------------------------------------------------
 
     @Override
     public Optional<RiotAccountDto> verifyNickname(String gameName, String tagLine) {
@@ -89,10 +86,6 @@ public class RiotApiServiceImpl implements RiotApiService {
             throw new RuntimeException("Riot API 통신 오류 발생 (상태: " + e.getRawStatusCode() + ")", e);
         }
     }
-
-    // --------------------------------------------------------------------------------
-    // 2. Data Dragon API
-    // --------------------------------------------------------------------------------
 
     @Override
     public String getLatestGameVersion() {
@@ -145,5 +138,29 @@ public class RiotApiServiceImpl implements RiotApiService {
             log.error("챔피언 데이터 조회 중 예기치 않은 오류 발생", e);
             return Collections.emptyMap();
         }
+    }
+
+    // ⭐ --------------------------------------------------------------------------------
+    // 3. Line/Position 추정용 Data Dragon URL 제공
+    // ⭐ --------------------------------------------------------------------------------
+
+    @Override
+    public String getSmiteIconUrl() {
+        String version = getLatestGameVersion();
+        if (version == null) return null;
+
+        // URL 형식: base/cdn/version/img/spell/SummonerSmite.png
+        return String.format(DDRAGON_BASE_URL + ICON_PATH_FORMAT, version, "spell", SMITE_SPELL_KEY);
+    }
+
+    @Override
+    public List<String> getSupportItemIconUrls() {
+        String version = getLatestGameVersion();
+        if (version == null) return Collections.emptyList();
+
+        // 서폿 아이템 URL 목록 생성: base/cdn/version/img/item/itemId.png
+        return SUPPORT_ITEM_IDS.stream()
+                .map(itemId -> String.format(DDRAGON_BASE_URL + ICON_PATH_FORMAT, version, "item", itemId))
+                .collect(Collectors.toList());
     }
 }

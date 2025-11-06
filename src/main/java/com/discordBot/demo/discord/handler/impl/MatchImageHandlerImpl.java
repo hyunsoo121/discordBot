@@ -57,13 +57,14 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
             return;
         }
 
-        event.getHook().sendMessage(matchImagePresenter.createInitialAnalysisMessage()).queue();
+        // 분석 시작 메시지 (Hook을 사용해 deferReply 메시지를 수정)
+        event.getHook().editOriginal(matchImagePresenter.createInitialAnalysisMessage()).queue();
 
-        List<LolAccount> allRegisteredAccounts = lolAccountRepository.findAllByGuildServer_DiscordServerId(serverId);
-        log.info("OCR 힌트를 위해 서버 {}에 등록된 계정 {}개를 로드했습니다.", serverId, allRegisteredAccounts.size());
+        List<LolAccount> allRegisteredAccounts = lolAccountRepository.findAllByGuildServer_DiscordServerId(serverId); // ⭐ Fetch Join을 통해 LAZY 로딩 문제 해결 시도        log.info("OCR 힌트를 위해 서버 {}에 등록된 계정 {}개를 로드했습니다.", serverId, allRegisteredAccounts.size());
 
         executor.execute(() -> {
             try {
+                // ⭐ 이미지 분석 및 라인 추정 로직 실행 (시간 소요)
                 MatchRegistrationDto resultDto = imageAnalysisService.analyzeAndStructureData(
                         imageAttachment.getUrl(),
                         serverId,
@@ -93,8 +94,9 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
 
         ActionRow buttonRow = matchImagePresenter.createConfirmationButtons(initiatorId);
 
+        // 분석 완료 후 확인 메시지로 Hook 수정
         hook.editOriginal(messageContent)
-                .setComponents(buttonRow) // ActionRow는 하나만 반환되므로 setComponents에 바로 사용
+                .setComponents(buttonRow)
                 .queue();
     }
 
@@ -123,22 +125,30 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
         // 2. 로직 실행
         if (buttonAction.equals(MatchImageHandler.BUTTON_ID_CONFIRM)) {
 
+            // ⭐⭐ 수정 1: DB 저장 중 메시지를 먼저 Hook으로 보냄
             event.getHook().editOriginal("💾 DB에 기록을 저장 중입니다...").setComponents().queue();
 
-            try {
-                matchRecordService.registerMatch(finalDto); // 동기 실행
+            // ⭐⭐ 수정 2: DB 저장 로직 전체를 비동기 Executor로 감싸서 JDA 스레드 차단 방지
+            executor.execute(() -> {
+                try {
+                    // ⭐ DB 저장 및 통계 업데이트 실행 (시간 소요)
+                    matchRecordService.registerMatch(finalDto);
 
-                event.getHook().editOriginal("✅ **최종 등록 완료!** 경기 기록이 성공적으로 저장되었습니다.")
-                        .setComponents()
-                        .queue();
+                    // ⭐⭐ 최종 등록 완료 메시지 (Executor 내부에서 Hook 사용)
+                    event.getHook().editOriginal("✅ **최종 등록 완료!** 경기 기록이 성공적으로 저장되었습니다.")
+                            .setComponents()
+                            .queue();
 
-            } catch (IllegalArgumentException e) {
-                event.getHook().editOriginal("❌ 등록 오류: " + e.getMessage() + "\n 기록을 다시 확인해주세요.").setComponents().queue();
-                pendingConfirmations.put(requiredInitiatorId, finalDto);
-            } catch (Exception e) {
-                log.error("DB 등록 실패: {}", e.getMessage(), e);
-                event.getHook().editOriginal("❌ 서버 오류: 이미지 분석 중 예상치 못한 오류가 발생했습니다.").setComponents().queue();
-            }
+                } catch (IllegalArgumentException e) {
+                    log.error("DB 등록 오류 (비즈니스): {}", e.getMessage(), e);
+                    // 실패 시 DTO를 돌려놓고 오류 메시지 출력
+                    pendingConfirmations.put(requiredInitiatorId, finalDto);
+                    event.getHook().editOriginal("❌ 등록 오류: " + e.getMessage() + "\n 기록을 다시 확인해주세요.").setComponents().queue();
+                } catch (Exception e) {
+                    log.error("DB 등록 실패: {}", e.getMessage(), e);
+                    event.getHook().editOriginal("❌ 서버 오류: 기록 저장 중 예상치 못한 오류가 발생했습니다. 로그를 확인하세요.").setComponents().queue();
+                }
+            });
 
         } else if (buttonAction.equals(MatchImageHandler.BUTTON_ID_CANCEL)) {
             event.getHook().editOriginal("🚫 경기 기록 등록이 취소되었습니다. `/match-upload`를 다시 사용해 주세요.").setComponents().queue();

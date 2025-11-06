@@ -5,11 +5,13 @@ import com.discordBot.demo.domain.dto.PlayerStatsDto;
 import com.discordBot.demo.domain.entity.*;
 import com.discordBot.demo.domain.repository.LolAccountRepository;
 import com.discordBot.demo.domain.repository.MatchRecordRepository;
+import com.discordBot.demo.domain.repository.LineRepository;
 import com.discordBot.demo.service.MatchRecordService;
 import com.discordBot.demo.service.ServerManagementService;
 import com.discordBot.demo.service.UserServerStatsService;
 import com.discordBot.demo.service.ChampionStatsService;
-import com.discordBot.demo.service.LineStatsService; // ⭐ LineStatsService 임포트
+import com.discordBot.demo.service.LineStatsService;
+import com.discordBot.demo.service.ChampionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,7 +35,9 @@ public class MatchRecordServiceImpl implements MatchRecordService {
     private final LolAccountRepository lolAccountRepository;
     private final UserServerStatsService userServerStatsService;
     private final ChampionStatsService championStatsService;
-    private final LineStatsService lineStatsService; // ⭐ LineStatsService 주입
+    private final LineStatsService lineStatsService;
+    private final ChampionService championService;
+    private final LineRepository lineRepository;
     private final EntityManager em;
 
 
@@ -50,13 +54,9 @@ public class MatchRecordServiceImpl implements MatchRecordService {
         // 1. 서버 존재 확인 및 중복 검증 단계 (로직 유지)
         serverManagementService.findOrCreateGuildServer(discordServerId);
 
-        // 1-1. 매치 중복 검사 (로직 유지)
         Optional<MatchRecord> existingMatch = matchRecordRepository
                 .findByGameDurationSecondsAndBlueTotalGoldAndRedTotalGoldAndGuildServer_DiscordServerId(
-                        duration,
-                        blueGold,
-                        redGold,
-                        discordServerId
+                        duration, blueGold, redGold, discordServerId
                 );
 
         if (existingMatch.isPresent()) {
@@ -122,7 +122,7 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             User user = lolAccount.getUser();
             int playerTeamKills = playerDto.getTeam().equalsIgnoreCase("BLUE") ? blueTeamKills : redTeamKills;
 
-            // PlayerStats 엔티티 생성 및 설정 (챔피언, 라인 FK 설정 로직 추가 필요)
+            // PlayerStats 엔티티 생성 및 설정
             PlayerStats stats = new PlayerStats();
             stats.setUser(user);
             stats.setLolNickname(lolAccount);
@@ -131,28 +131,35 @@ public class MatchRecordServiceImpl implements MatchRecordService {
             stats.setDeaths(playerDto.getDeaths());
             stats.setAssists(playerDto.getAssists());
 
-            // ⭐ DPM/GPM 필드 설정 추가
+            // DPM/GPM 필드 설정
             stats.setTotalGold(playerDto.getTotalGold());
             stats.setTotalDamage(playerDto.getTotalDamage());
             stats.setDurationSeconds(playerDto.getDurationSeconds());
 
-
             boolean isWin = playerDto.getTeam().equalsIgnoreCase(matchDto.getWinnerTeam());
             stats.setIsWin(isWin);
 
-            // TODO: stats.setChampion()과 stats.setLine() 호출 필요
+            // ⭐⭐⭐ 핵심: PlayerStats에 Champion 및 Line FK 설정 ⭐⭐⭐
+            try {
+                // ChampionService를 통해 Champion 엔티티 조회
+                Champion champion = findChampion(playerDto.getChampionName());
+                // LineRepository를 통해 Line 엔티티 조회
+                Line line = findLine(playerDto.getLaneName());
 
-            matchRecord.addPlayerStats(stats);
+                stats.setChampion(champion); // Champion FK 설정
+                stats.setLine(line); // Line FK 설정
+            } catch (IllegalArgumentException e) {
+                log.error("챔피언 또는 라인 정보를 찾을 수 없습니다. 에러: {}", e.getMessage());
+                throw e; // 트랜잭션 롤백
+            }
+
+            matchRecord.addPlayerStats(stats); // PlayerStats를 MatchRecord에 연결
 
             // ⭐ 4-1. UserServerStats 업데이트 (전체 통계)
             if (user != null) {
                 userServerStatsService.updateStatsAfterMatch(
-                        user.getDiscordUserId(),
-                        discordServerId,
-                        playerDto,
-                        isWin,
-                        (long) duration,
-                        playerTeamKills
+                        user.getDiscordUserId(), discordServerId, playerDto, isWin,
+                        (long) duration, playerTeamKills
                 );
 
                 // ⭐⭐ 4-2. ChampionStats 업데이트 (챔피언별 통계)
@@ -168,17 +175,34 @@ public class MatchRecordServiceImpl implements MatchRecordService {
 
                 // ⭐⭐ 4-3. LineStats 업데이트 (라인별 통계)
                 lineStatsService.updateLineStats(
-                        user.getDiscordUserId(),
-                        discordServerId,
-                        playerDto,
-                        isWin,
-                        (long) duration,
-                        playerTeamKills
+                        user.getDiscordUserId(), discordServerId, playerDto, isWin,
+                        (long) duration, playerTeamKills
                 );
             }
         });
 
         // 5. MatchRecord 저장
         return matchRecordRepository.save(matchRecord);
+    }
+
+    // =========================================================================
+    // 엔티티 조회 헬퍼 메서드 (MatchRecordServiceImpl 내부에 구현)
+    // =========================================================================
+
+    /**
+     * 챔피언 이름을 통해 Champion 엔티티를 조회합니다.
+     */
+    private Champion findChampion(String championName) {
+        return championService.findChampionByIdentifier(championName)
+                .orElseThrow(() -> new IllegalArgumentException("❌ 챔피언 [" + championName + "] 정보를 찾을 수 없습니다."));
+    }
+
+    /**
+     * 라인 이름을 통해 Line 엔티티를 조회합니다.
+     */
+    private Line findLine(String laneName) {
+        // LineStatsServiceImpl과 동일하게 대문자로 변환하여 조회
+        return lineRepository.findByName(laneName.toUpperCase())
+                .orElseThrow(() -> new IllegalArgumentException("❌ 라인 [" + laneName + "] 정보를 찾을 수 없습니다."));
     }
 }
