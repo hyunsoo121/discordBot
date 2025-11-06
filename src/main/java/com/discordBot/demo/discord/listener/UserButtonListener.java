@@ -1,6 +1,6 @@
 package com.discordBot.demo.discord.listener;
 
-import com.discordBot.demo.discord.handler.UserSearchHandler; // ⭐ UserSearchHandler 사용
+import com.discordBot.demo.discord.handler.UserSearchHandler;
 import lombok.RequiredArgsConstructor;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;

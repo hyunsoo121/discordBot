@@ -24,8 +24,10 @@ public class UserSearchHandlerImpl implements UserSearchHandler {
     private final UserSearchService userSearchService;
     private final UserSearchPresenter userSearchPresenter;
 
-    private static final String COMMAND_NAME = "유저검색";
+    private static final String COMMAND_NAME = "유저검색"; // SlashCommandListener에서 정의된 이름으로 가정
     private static final int CHAMPIONS_PER_PAGE = 5;
+    private static final String ID_PREFIX = "userstats_";
+
 
     @Override
     public void handleUserStatsCommand(SlashCommandInteractionEvent event) {
@@ -35,29 +37,32 @@ public class UserSearchHandlerImpl implements UserSearchHandler {
         event.deferReply(true).queue();
 
         OptionMapping discordUserOption = event.getOption("discord-user");
-        OptionMapping lolNicknameOption = event.getOption("lol-nickname"); // ⭐ 새 옵션 추가
+        OptionMapping lolNicknameOption = event.getOption("lol-nickname"); // Riot ID 전체 (닉네임#태그)
 
         Long serverId = event.getGuild().getIdLong();
         Long targetDiscordUserId = null;
         Optional<UserSearchDto> statsDtoOpt = Optional.empty();
         String discordMention = null;
 
+        // 검색 시도된 Riot ID를 저장
+        String attemptedRiotId = null;
+
         try {
             if (discordUserOption != null) {
-                // CASE 1: Discord User 멘션 검색 (기존 로직 유지)
+                // CASE 1: Discord User 멘션 검색
                 User discordUser = discordUserOption.getAsUser();
                 targetDiscordUserId = discordUser.getIdLong();
                 discordMention = discordUser.getAsMention();
 
                 statsDtoOpt = userSearchService.searchUserInternalStatsByDiscordId(targetDiscordUserId, serverId);
 
-            } else if (lolNicknameOption != null) { // ⭐ 조건 변경: lolNicknameOption만 확인
-
+            } else if (lolNicknameOption != null) {
+                // CASE 2: Riot ID 검색
                 String fullRiotId = lolNicknameOption.getAsString();
                 String[] parts = fullRiotId.split("#");
+                attemptedRiotId = fullRiotId; // 검색 시도된 ID 저장
 
                 if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank()) {
-                    // Riot ID 형식이 올바르지 않은 경우
                     event.getHook().sendMessage("❌ 오류: Riot ID 형식이 올바르지 않습니다. '닉네임#태그' 형식으로 입력해주세요.").setEphemeral(true).queue();
                     return;
                 }
@@ -70,7 +75,7 @@ public class UserSearchHandlerImpl implements UserSearchHandler {
                 if (statsDtoOpt.isPresent()) {
                     UserSearchDto stats = statsDtoOpt.get();
                     targetDiscordUserId = stats.getDiscordUserId();
-                    // DB에서 ID를 가져왔으므로 수동 멘션 생성
+                    // 동기 호출 방지
                     discordMention = "<@" + targetDiscordUserId + ">";
                 }
 
@@ -79,10 +84,21 @@ public class UserSearchHandlerImpl implements UserSearchHandler {
                 return;
             }
 
+            // ⭐ 4. 결과 응답 처리
             if (statsDtoOpt.isEmpty()) {
-                String failMessage = (targetDiscordUserId != null)
-                        ? discordMention + "님은 해당 서버에 내전 기록이 없습니다."
-                        : "❌ 검색 실패: Riot ID가 서버에 등록되지 않았거나 유저를 찾을 수 없습니다.";
+
+                String failMessage;
+
+                if (lolNicknameOption != null) {
+                    failMessage = "❌ 검색 실패: " + attemptedRiotId + "님은 **등록된 ID**이나, 해당 서버에 내전 기록이 없습니다.";
+
+                } else if (discordUserOption != null) {
+                    // Discord 멘션은 성공했으나, 통계가 없는 경우
+                    failMessage = "❌ 검색 실패: " + discordMention + "님은 해당 서버에 내전 기록이 없습니다.";
+                } else {
+                    // 데이터베이스에 ID 자체가 없는 경우 (이전 단계에서 이미 필터링 되었어야 함)
+                    failMessage = "❌ 검색 실패: Riot ID가 서버에 등록되지 않았거나 유저를 찾을 수 없습니다.";
+                }
 
                 event.getHook().sendMessage(failMessage).setEphemeral(true).queue();
                 return;
@@ -107,7 +123,6 @@ public class UserSearchHandlerImpl implements UserSearchHandler {
             event.getHook().sendMessage("❌ 서버 처리 중 예기치 않은 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.").setEphemeral(true).queue();
         }
     }
-
 
     @Override
     public void handlePagination(ButtonInteractionEvent event) {
