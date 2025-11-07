@@ -11,14 +11,12 @@ import com.discordBot.demo.service.RiotApiService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-// Google GenAI SDK v1.8.0 import
 import com.google.genai.Client;
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.GenerateContentConfig;
 
-// 이미지 다운로드를 위한 okhttp 라이브러리 import
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -96,7 +94,7 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
         }
     }
 
-    // JSON 응답 구조 (PlayerStatsDto에 laneName 필드가 있다고 가정)
+    // JSON 응답 구조
     @JsonIgnoreProperties(ignoreUnknown = true)
     private static class JsonExtractionResult {
         public String analysisStatus;
@@ -121,27 +119,19 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
         String smiteUrl = riotApiService.getSmiteIconUrl();
         List<String> supportItemUrls = riotApiService.getSupportItemIconUrls();
 
-        // ⭐⭐ 로깅 추가: 아이템 URL이 유효한지 확인
-        log.info("Riot HINT URLS: Smite={} | Support Items Count={}", smiteUrl, supportItemUrls.size());
-
-
         // 텍스트 프롬프트에 모든 힌트 URL을 포함시켜 Gemini에게 판단 근거를 제공
         String visualHintPrompt = String.format(
                 "라인(laneName) 추정을 위해 다음 규칙을 적용하세요: " +
                         "1. 스펠 슬롯에서 강타 아이콘(%s)이 보이면 'JUNGLE'로 설정하세요. " +
                         "2. 시작 아이템 슬롯에서 서포터 아이템(%s) 중 하나가 보이면 'SUPPORT'로 설정하세요. " +
                         "3. 두 가지 조건이 모두 해당되지 않는다면, 'UNKNOWN'으로 두세요. " +
-                        "4. 라인 코드는 TOP, JUNGLE, MIDDLE, BOTTOM, SUPPORT 중 하나여야 합니다. " +
-                        "추가 규칙: **각 팀(BLUE, RED) 내에서 TOP, JUNGLE, MIDDLE, BOTTOM, SUPPORT 라인은 오직 하나씩만 존재해야 합니다.**", // ⭐ 구조적 규칙 추가
+                        "4. 라인 코드는 TOP, JUNGLE, MIDDLE, BOTTOM, SUPPORT 중 하나여야 합니다. ",
                 smiteUrl, String.join(", ", supportItemUrls)
         );
 
         // 3. 최종 프롬프트 결합
-        String structuralRule = "⭐⭐중요 규칙: 각 팀은 5개의 라인(TOP, JUNGLE, MIDDLE, BOTTOM, SUPPORT)을 정확히 하나씩 가져야 합니다. 추정 시 이 규칙을 최우선으로 적용하세요.⭐⭐";
-
         String combinedPrompt = String.format(matchDataPromptTemplate, userHintList, championHintList) +
-                "\n\n" + visualHintPrompt +
-                "\n\n" + structuralRule; // ⭐ 구조적 규칙을 더욱 강조
+                "\n\n" + visualHintPrompt; // 시각적 힌트 추가 (구조적 규칙은 txt 파일에 포함됨)
 
         // Gemini API 호출
         GenerateContentResponse response = callGeminiApi(combinedPrompt, imageBytes);
@@ -189,7 +179,7 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
         if (!StringUtils.hasText(laneName)) return false;
         String upperCaseLane = laneName.toUpperCase();
 
-        return allLines.stream().anyMatch(line -> line.getName().equals(upperCaseLane)); // ⭐ Line 엔티티 구조에 맞게 .getName() 추가
+        return allLines.stream().anyMatch(line -> line.getName().equals(upperCaseLane));
     }
 
 

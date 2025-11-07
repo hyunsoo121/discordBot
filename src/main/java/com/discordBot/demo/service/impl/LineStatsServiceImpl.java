@@ -52,8 +52,11 @@ public class LineStatsServiceImpl implements LineStatsService {
         id.setGuildServer(serverId);
         id.setLineId(line.getLineId());
 
-        LineStats stats = lineStatsRepository.findById(id)
-                .orElseGet(() -> createNewLineStats(user, guildServer, line));
+        LineStats stats = lineStatsRepository.findByUser_DiscordUserIdAndGuildServer_DiscordServerIdAndLine_LineId(
+                userId,
+                serverId,
+                line.getLineId() // Long lineId
+        ).orElseGet(() -> createNewLineStats(user, guildServer, line));
 
         // 4. 통계 누적
         // LineStats 엔티티의 addStats 메서드도 teamTotalKills를 받도록 수정되어야 합니다.

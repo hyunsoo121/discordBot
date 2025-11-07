@@ -7,4 +7,9 @@ Duration: Find the Total Game Duration (format Xm Ys) and convert it to total se
 Stats: Extract stats for all 10 players. Note the positions: 'totalDamage' is the second column from the right (often marked with a star *). 'totalGold' is the final column on the far right. Extract 'gameName', 'tagLine', 'team' (RED/BLUE), 'championName', 'kills', 'deaths', 'assists', 'totalGold' (far right column), and 'totalDamage' (second from right).
 Specific Position Hint: The champion name is located directly beneath the player's Riot ID (gameName).
 Specific OCR Correction: If you detect any confusion between the letter 'O' and the number '0', or between the letter 'I' and '1', always assume the letter variant unless the surrounding context is strictly numerical. Correct all player names accordingly.
+
+-- Structure and Lane Rule --
+CRITICAL: You MUST extract exactly 10 players.
+LANE RULE: Each team (BLUE and RED) must have exactly one player assigned to each of the following roles: TOP, JUNGLE, MIDDLE, BOTTOM, and SUPPORT. Use champion and item visuals to deduce the roles.
+
 IMPORTANT: Use the registered accounts list [%s] to correct any OCR errors and accurately map the Riot IDs. For championName, use the champion list [%s] to correct recognition errors.
