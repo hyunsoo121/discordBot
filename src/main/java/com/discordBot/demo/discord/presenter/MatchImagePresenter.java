@@ -5,6 +5,7 @@ import com.discordBot.demo.domain.dto.MatchRegistrationDto;
 import net.dv8tion.jda.api.interactions.components.ActionRow;
 import net.dv8tion.jda.api.interactions.components.buttons.Button;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 @Component
 public class MatchImagePresenter {
@@ -29,8 +30,18 @@ public class MatchImagePresenter {
         dto.getPlayerStatsList().forEach(stats -> {
             String displayTeamLabel = getDisplayTeamLabel(stats.getTeam());
 
+            // ⭐ Lane 정보 처리 (LaneName 사용)
+            String laneCode = stats.getLaneName();
+            String laneDisplay = (StringUtils.hasText(laneCode) && !laneCode.equalsIgnoreCase("UNKNOWN"))
+                    ? laneCode
+                    : "라인 미확인";
+
             sb.append("`").append(displayTeamLabel).append("` | ");
-            sb.append("**").append(stats.getLolGameName()).append("#").append(stats.getLolTagLine()).append("**").append(" (").append(stats.getChampionName()).append(") | ");
+
+            // ⭐ 챔피언 및 Lane 출력 포맷: (챔피언 / Lane) 형태로 출력
+            sb.append("**").append(stats.getLolGameName()).append("#").append(stats.getLolTagLine()).append("**");
+            sb.append(" (").append(stats.getChampionName()).append(" / **").append(laneDisplay).append("**) | ");
+
             sb.append("KDA: ").append(stats.getKills()).append("/").append(stats.getDeaths()).append("/").append(stats.getAssists()).append("\n");
         });
 

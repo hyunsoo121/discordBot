@@ -56,9 +56,9 @@ public class SlashCommandListener extends ListenerAdapter {
                     break;
 
                 default:
-                    // deferReply가 되지 않은 경우 event.reply() 사용
-                    event.reply("알 수 없는 커맨드입니다.").setEphemeral(true).queue();
-                    break;
+                        // deferReply가 되지 않은 경우 event.reply() 사용
+                        event.reply("알 수 없는 커맨드입니다.").setEphemeral(true).queue();
+                        break;
             }
         } catch (IllegalArgumentException e) {
             String message = e.getMessage().startsWith("❌ 오류:") ? e.getMessage() : "❌ 비즈니스 로직 오류가 발생했습니다.";
@@ -76,14 +76,15 @@ public class SlashCommandListener extends ListenerAdapter {
         List<CommandData> commandDataList = new ArrayList<>();
 
         commandDataList.add(
-                Commands.slash("롤계정등록", "관리자 전용: 특정 유저의 롤 닉네임(Riot ID)을 연결합니다.")
+                Commands.slash("롤계정등록", "관리자 전용: 특정 유저의 롤 계정과 선호 라인을 연결합니다.")
                         .addOption(OptionType.USER, "target-user", "롤 계정을 연결할 디스코드 유저를 @멘션하세요.", true)
                         .addOption(OptionType.STRING, "lol-nickname", "롤 닉네임과 태그를 '이름#태그' 형식으로 입력하세요 (예: Hide On Bush#KR1)", true)
+                        .addOption(OptionType.STRING, "preferred-lines", "선호 라인을 1개 이상 입력하세요 (콤마로 구분, 예: 탑, 정글, 원딜, 미드, 서폿)", true)
         );
 
         commandDataList.add(
                 Commands.slash("내전경기등록", "경기 결과 이미지로 기록을 등록합니다.")
-                        .addOption(OptionType.ATTACHMENT, "result-image", "경기 결과 스크린샷 이미지", true)
+                        .addOption(OptionType.ATTACHMENT, "input-image", "경기 결과 스크린샷 이미지", true)
         );
 
         commandDataList.add(

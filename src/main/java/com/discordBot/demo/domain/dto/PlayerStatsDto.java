@@ -19,10 +19,14 @@ public class PlayerStatsDto {
     @JsonProperty("championName")
     private String championName;
 
+    private String laneName;
+
     private int kills;
     private int deaths;
     private int assists;
 
     private int totalGold;
     private int totalDamage;
+
+    private long durationSeconds;
 }

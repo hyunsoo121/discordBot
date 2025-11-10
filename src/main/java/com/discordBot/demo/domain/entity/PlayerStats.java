@@ -28,6 +28,14 @@ public class PlayerStats {
     @JoinColumn(name = "lol_id")
     private LolAccount lolNickname; // 해당 경기에 사용된 롤 닉네임
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "champion_id", nullable = false)
+    private Champion champion;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "line_id", nullable = false)
+    private Line line;
+
     @Column(name = "team", nullable = false, length = 10)
     private String team; // 속한 팀 (RED/BLUE)
 
@@ -42,4 +50,15 @@ public class PlayerStats {
 
     @Column(name = "assists", nullable = false)
     private Integer assists;
+
+    // ⭐ GPM, DPM 계산을 위한 필드 추가 (PlayerStatsDto와 일치)
+
+    @Column(name = "total_gold", nullable = false) // DTO의 totalGold
+    private long totalGold;
+
+    @Column(name = "total_damage", nullable = false) // DTO의 totalDamage
+    private long totalDamage;
+
+    @Column(name = "duration_seconds", nullable = false) // DTO의 durationSeconds
+    private long durationSeconds;
 }

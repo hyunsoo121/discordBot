@@ -5,6 +5,9 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
 
+import java.util.HashSet;
+import java.util.Set;
+
 @Entity
 @Getter
 @Setter
@@ -38,6 +41,14 @@ public class LolAccount {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "guild_server_id", nullable = false) // 서버별 등록을 위해 필수
     private GuildServer guildServer;
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "LOL_ACCOUNT_PREFERRED_LINES", // 새로운 조인 테이블 이름
+            joinColumns = @JoinColumn(name = "lol_account_id"),
+            inverseJoinColumns = @JoinColumn(name = "line_id")
+    )
+    private Set<Line> preferredLines = new HashSet<>();
 
     public String getFullAccountName() {
         return gameName + "#" + (tagLine != null ? tagLine : "");
