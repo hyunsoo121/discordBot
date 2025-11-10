@@ -84,7 +84,7 @@ public class SlashCommandListener extends ListenerAdapter {
 
         commandDataList.add(
                 Commands.slash("내전경기등록", "경기 결과 이미지로 기록을 등록합니다.")
-                        .addOption(OptionType.ATTACHMENT, "result-image", "경기 결과 스크린샷 이미지", true)
+                        .addOption(OptionType.ATTACHMENT, "input-image", "경기 결과 스크린샷 이미지", true)
         );
 
         commandDataList.add(

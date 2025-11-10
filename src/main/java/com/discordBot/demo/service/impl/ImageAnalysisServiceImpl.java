@@ -115,30 +115,45 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                 .collect(Collectors.joining(", "));
         String championHintList = String.join(", ", championService.getAllChampionNamesForHint());
 
-        // ⭐⭐ 2. 라인 추정을 위한 시각적 힌트 URL 획득 및 프롬프트 생성 ⭐⭐
+        // ⭐⭐ NEW: Preferred Lane 힌트 목록 생성 (Gemini 프롬프트에 전달할 형식) ⭐⭐
+        String preferredLaneHintList = registeredAccounts.stream()
+                .map(acc -> {
+                    // 첫 번째 선호 라인을 가져오거나, 없으면 'UNKNOWN'으로 표시
+                    String preferredLane = acc.getPreferredLines().isEmpty()
+                            ? "UNKNOWN"
+                            : acc.getPreferredLines().iterator().next().getName().toUpperCase();
+                    // Riot ID#TagLine:PREF_LANE 형식으로 문자열 생성
+                    return String.format("%s#%s:%s", acc.getGameName(), acc.getTagLine(), preferredLane);
+                })
+                .collect(Collectors.joining(", "));
+
+
+        // ⭐⭐ 2. 라인 추정을 위한 시각적 힌트 URL 획득 ⭐⭐
         String smiteUrl = riotApiService.getSmiteIconUrl();
         List<String> supportItemUrls = riotApiService.getSupportItemIconUrls();
+        String supportItemUrlsString = String.join(", ", supportItemUrls); // 리스트를 단일 문자열로 변환
 
-        // 텍스트 프롬프트에 모든 힌트 URL을 포함시켜 Gemini에게 판단 근거를 제공
-        String visualHintPrompt = String.format(
-                "라인(laneName) 추정을 위해 다음 규칙을 적용하세요: " +
-                        "1. 스펠 슬롯에서 강타 아이콘(%s)이 보이면 'JUNGLE'로 설정하세요. " +
-                        "2. 시작 아이템 슬롯에서 서포터 아이템(%s) 중 하나가 보이면 'SUPPORT'로 설정하세요. " +
-                        "3. 두 가지 조건이 모두 해당되지 않는다면, 'UNKNOWN'으로 두세요. " +
-                        "4. 라인 코드는 TOP, JUNGLE, MIDDLE, BOTTOM, SUPPORT 중 하나여야 합니다. ",
-                smiteUrl, String.join(", ", supportItemUrls)
+        // 3. 최종 프롬프트 결합 (6개 인자 순서에 맞춰 재구성)
+        // 가정된 %s 순서: [Champion List 1], [Champion List 2], [Smite URL], [Support URLs], [User Hint List], [NEW: Preferred Lane List]
+
+        String combinedPrompt = String.format(
+                matchDataPromptTemplate,
+                championHintList,      // 1. Champion 힌트 (OCR 보정)
+                championHintList,      // 2. Champion 힌트 (Final Validation)
+                smiteUrl,              // 3. Smite Icon URL
+                supportItemUrlsString, // 4. Support Item URLs String
+                userHintList,          // 5. Riot ID 힌트
+                preferredLaneHintList  // 6. NEW: 선호 라인 힌트 (프롬프트에 직접 전달)
         );
 
-        // 3. 최종 프롬프트 결합
-        String combinedPrompt = String.format(matchDataPromptTemplate, userHintList, championHintList) +
-                "\n\n" + visualHintPrompt; // 시각적 힌트 추가 (구조적 규칙은 txt 파일에 포함됨)
+        log.info("✉️ Gemini Combined Prompt sent:\n{}", combinedPrompt);
 
         // Gemini API 호출
         GenerateContentResponse response = callGeminiApi(combinedPrompt, imageBytes);
         String rawJsonString = extractRawJsonText(response);
         JsonExtractionResult extractionResult = parseAndValidateJson(rawJsonString);
 
-        // ⭐⭐ 4. 라인 추정 후처리 (Gemini가 UNKNOWN으로 반환한 경우) ⭐⭐
+        // ⭐⭐ 4. 라인 추정 후처리 (Gemini가 UNKNOWN으로 반환한 경우 - 최종 안전망) ⭐⭐
         for (PlayerStatsDto playerDto : extractionResult.players) {
 
             String geminiLane = playerDto.getLaneName();
@@ -153,12 +168,15 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                         .orElse(null);
 
                 if (account != null && account.getPreferredLines() != null && !account.getPreferredLines().isEmpty()) {
-                    // 선호 라인 중 첫 번째 라인을 라인으로 설정
+                    // 선호 라인 중 첫 번째 라인을 라인으로 설정 (여전히 UNKNOWN인 경우)
                     String assumedLane = account.getPreferredLines().iterator().next().getName();
                     playerDto.setLaneName(assumedLane);
+                    // 로그 메시지 수정: 이제 Gemini는 이 정보를 '힌트'로 받았지만, 최종적으로 'UNKNOWN'을 반환하여 후처리 로직이 실행되었음을 알림.
+                    log.info("⚠️ Gemini returned UNKNOWN. Overriding with preferred lane '{}' for player {}.", assumedLane, playerDto.getLolGameName());
                 } else {
                     // 최종적으로도 추정 불가
                     playerDto.setLaneName("UNKNOWN");
+                    log.info("❌ No preferred lane found or assigned for player {}. Final lane: UNKNOWN.", playerDto.getLolGameName());
                 }
             }
 
