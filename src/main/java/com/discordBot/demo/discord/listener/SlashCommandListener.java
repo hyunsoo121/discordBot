@@ -47,6 +47,10 @@ public class SlashCommandListener extends ListenerAdapter {
                     rankingHandler.handleRankingCommand(event);
                     break;
 
+                case "라인별순위":
+                    rankingHandler.handleLineRankingCommand(event);
+                    break;
+
                 case "유저검색": // user-stats
                     userSearchHandler.handleUserStatsCommand(event);
                     break;
@@ -89,6 +93,11 @@ public class SlashCommandListener extends ListenerAdapter {
 
         commandDataList.add(
                 Commands.slash("내전통합랭킹", "내전 랭킹을 확인합니다")
+        );
+
+        commandDataList.add(
+                Commands.slash("라인별순위", "특정 라인의 랭킹을 확인합니다.")
+                        .addOption(OptionType.STRING, "라인이름", "확인할 라인을 입력하세요 (TOP, JUNGLE, MID, ADC, SUPPORT)", true)
         );
 
         commandDataList.add(

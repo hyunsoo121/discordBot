@@ -18,6 +18,8 @@ public class UserButtonListener extends ListenerAdapter {
         String componentId = event.getComponentId();
 
         if (componentId.startsWith(ID_PREFIX)) {
+
+            event.deferEdit().queue();
             userSearchHandler.handlePagination(event);
         }
     }

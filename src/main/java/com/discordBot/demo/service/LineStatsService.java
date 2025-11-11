@@ -13,6 +13,6 @@ public interface LineStatsService {
             PlayerStatsDto playerStatsDto,
             boolean isWin,
             long gameDurationSeconds,
-            int teamTeamKills
+            int teamTotalKills
     );
 }

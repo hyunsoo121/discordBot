@@ -1,6 +1,8 @@
 package com.discordBot.demo.service.impl;
 
+import com.discordBot.demo.domain.dto.LineRankDto;
 import com.discordBot.demo.domain.dto.UserRankDto;
+import com.discordBot.demo.domain.repository.LineStatsRepository;
 import com.discordBot.demo.domain.repository.UserServerStatsRepository;
 import com.discordBot.demo.service.RankingService;
 import com.discordBot.demo.domain.enums.RankingCriterion;
@@ -20,6 +22,7 @@ import java.util.stream.Collectors;
 public class RankingServiceImpl implements RankingService {
 
     private final UserServerStatsRepository userServerStatsRepository;
+    private final LineStatsRepository lineStatsRepository;
 
     @Override
     public List<UserRankDto> getRanking(Long serverId, int minGamesThreshold, RankingCriterion criterion) {
@@ -35,8 +38,7 @@ public class RankingServiceImpl implements RankingService {
         };
 
         Comparator<UserRankDto> finalComparator = primaryComparator
-                // 2순위 이하: 1순위 기준이 동점일 때 사용 (KDA, GPM 등)
-                // 승률이 최우선일 때 KDA로, KDA가 최우선일 때 GPM으로 자연스럽게 넘어간다.
+                // 2순위 이하: 1순위 기준이 동점일 때 사용
                 .thenComparing(UserRankDto::getWinRate, Comparator.reverseOrder())
                 .thenComparing(UserRankDto::getKda, Comparator.reverseOrder())
                 .thenComparing(UserRankDto::getGpm, Comparator.reverseOrder())
@@ -54,6 +56,42 @@ public class RankingServiceImpl implements RankingService {
                 .collect(Collectors.toList());
 
         log.info("랭킹 조회 완료: 서버 ID {} (기준: {})", serverId, criterion.getDisplayName());
+
+        return rankedList;
+    }
+
+    @Override
+    public List<LineRankDto> getLineRanking(Long serverId, Long lineId, int minGamesThreshold, RankingCriterion criterion) {
+
+        Comparator<LineRankDto> primaryComparator = switch (criterion) {
+            case WIN_RATE -> Comparator.comparing(LineRankDto::getWinRate, Comparator.reverseOrder());
+            case KDA -> Comparator.comparing(LineRankDto::getKda, Comparator.reverseOrder());
+            case GAMES -> Comparator.comparing(LineRankDto::getTotalGames, Comparator.reverseOrder());
+
+            case GPM -> Comparator.comparing(LineRankDto::getGpm, Comparator.reverseOrder());
+            case DPM -> Comparator.comparing(LineRankDto::getDpm, Comparator.reverseOrder());
+            case KP -> Comparator.comparing(LineRankDto::getKillParticipation, Comparator.reverseOrder());
+        };
+
+        // ⭐ 중복된 fully-qualified names 제거 및 단순화
+        Comparator<LineRankDto> finalComparator = primaryComparator
+                .thenComparing(LineRankDto::getWinRate, Comparator.reverseOrder())
+                .thenComparing(LineRankDto::getKda, Comparator.reverseOrder())
+                .thenComparing(LineRankDto::getGpm, Comparator.reverseOrder())
+                .thenComparing(LineRankDto::getDpm, Comparator.reverseOrder())
+                .thenComparing(LineRankDto::getKillParticipation, Comparator.reverseOrder())
+                .thenComparing(LineRankDto::getTotalGames, Comparator.reverseOrder());
+
+        // ⭐ 중복된 fully-qualified names 제거 및 단순화
+        List<LineRankDto> rankedList = lineStatsRepository
+                .findAllByGuildServer_DiscordServerIdAndLine_LineId(serverId, lineId)
+                .stream()
+                .map(LineRankDto::from)
+                .filter(dto -> dto.getTotalGames() >= minGamesThreshold)
+                .sorted(finalComparator)
+                .collect(Collectors.toList());
+
+        log.info("라인별 랭킹 조회 완료: 서버 ID {} 라인 {} (기준: {})", serverId, lineId, criterion.getDisplayName());
 
         return rankedList;
     }

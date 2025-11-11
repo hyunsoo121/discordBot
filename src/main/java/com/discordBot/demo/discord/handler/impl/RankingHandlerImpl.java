@@ -2,7 +2,10 @@ package com.discordBot.demo.discord.handler.impl;
 
 import com.discordBot.demo.discord.handler.RankingHandler;
 import com.discordBot.demo.discord.presenter.RankingPresenter;
+import com.discordBot.demo.domain.dto.LineRankDto;
 import com.discordBot.demo.domain.dto.UserRankDto;
+import com.discordBot.demo.domain.entity.Line;
+import com.discordBot.demo.domain.repository.LineRepository;
 import com.discordBot.demo.service.RankingService;
 import com.discordBot.demo.domain.enums.RankingCriterion;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +25,7 @@ public class RankingHandlerImpl implements RankingHandler {
 
     private final RankingService rankingService;
     private final RankingPresenter rankingPresenter;
+    private final LineRepository lineRepository;
     private static final int MIN_GAMES_THRESHOLD = 1;
     private static final int ITEMS_PER_PAGE = 10;
 
@@ -58,6 +62,38 @@ public class RankingHandlerImpl implements RankingHandler {
     }
 
     @Override
+    public void handleLineRankingCommand(SlashCommandInteractionEvent event) {
+        event.deferReply(true).queue();
+
+        Long discordServerId = event.getGuild().getIdLong();
+        String serverName = event.getGuild().getName();
+
+        String lineNameOption = event.getOption("라인이름") != null ? event.getOption("라인이름").getAsString().toUpperCase() : null;
+        if (lineNameOption == null) {
+            event.getHook().sendMessage("❌ 오류: 라인 이름을 입력하세요. (예: TOP, JUNGLE, MID, ADC, SUPPORT)").queue();
+            return;
+        }
+
+        Line line = lineRepository.findByName(lineNameOption).orElse(null);
+        if (line == null) {
+            event.getHook().sendMessage("❌ 오류: 알 수 없는 라인 이름입니다: " + lineNameOption).queue();
+            return;
+        }
+
+        List<LineRankDto> rankedList = rankingService.getLineRanking(discordServerId, line.getLineId(), MIN_GAMES_THRESHOLD, RankingCriterion.WIN_RATE);
+
+        if (rankedList.isEmpty()) {
+            event.getHook().sendMessage("❌ 해당 라인에 대한 랭킹 데이터가 없습니다.").queue();
+            return;
+        }
+
+        // 상위 10명 표시
+        List<LineRankDto> topList = rankedList.subList(0, Math.min(rankedList.size(), ITEMS_PER_PAGE));
+        MessageEmbed embed = rankingPresenter.createLineRankingEmbed(serverName, line.getDisplayName(), rankedList, topList, 1, getTotalPages(rankedList.size(), ITEMS_PER_PAGE));
+        event.getHook().sendMessageEmbeds(embed).queue();
+    }
+
+    @Override
     public void handleRankingButtonInteraction(ButtonInteractionEvent event) {
 
         String componentId = event.getComponentId();
@@ -66,9 +102,106 @@ public class RankingHandlerImpl implements RankingHandler {
         if (componentId.startsWith(RankingHandler.SORT_BUTTON_ID_PREFIX)) {
             handleSortButtonInternal(event);
 
-            // 2. 페이지네이션 버튼 이벤트 처리
+        // 2. 페이지네이션 버튼 이벤트 처리
         } else if (componentId.startsWith(RankingHandler.PAGINATION_BUTTON_ID_PREFIX)) {
             handlePaginationButtonInternal(event);
+
+        // 3. 라인별 정렬 버튼 이벤트 처리
+        } else if (componentId.startsWith(RankingHandler.SORT_LINE_BUTTON_ID_PREFIX)) {
+            handleLineSortButtonInternal(event);
+
+        // 4. 라인별 페이지네이션 버튼 이벤트 처리
+        } else if (componentId.startsWith(RankingHandler.PAGINATION_LINE_BUTTON_ID_PREFIX)) {
+            handleLinePaginationButtonInternal(event);
+        }
+    }
+
+    private void handleLineSortButtonInternal(ButtonInteractionEvent event) {
+        try {
+            String fullId = event.getComponentId();
+            // format: sort_line_rank_CRITERION_SERVERID_LINEID
+            String[] parts = fullId.split("_");
+            // parts[0]=sort,1=line,2=rank,3=CRITERION,4=SERVERID,5=LINEID (depending on split)
+            // Find CRITERION index
+            int critIndex = 3;
+            String criterionName = parts[critIndex];
+            Long discordServerId = Long.parseLong(parts[critIndex + 1]);
+            Long lineId = Long.parseLong(parts[critIndex + 2]);
+
+            RankingCriterion newCriterion = RankingCriterion.valueOf(criterionName);
+            int currentPage = 1;
+
+            List<LineRankDto> allRankedList = rankingService.getLineRanking(discordServerId, lineId, MIN_GAMES_THRESHOLD, newCriterion);
+            if (allRankedList.isEmpty()) return;
+
+            List<LineRankDto> currentPageList = getPage(allRankedList, currentPage, ITEMS_PER_PAGE);
+            int totalPages = getTotalPages(allRankedList.size(), ITEMS_PER_PAGE);
+
+            MessageEmbed newEmbed = rankingPresenter.createLineRankingEmbed(event.getGuild().getName(), "라인", allRankedList, currentPageList, currentPage, totalPages);
+            ActionRow sortRow1 = rankingPresenter.createLineSortButtonsRow1(discordServerId, lineId, newCriterion);
+            ActionRow sortRow2 = rankingPresenter.createLineSortButtonsRow2(discordServerId, lineId, newCriterion);
+            ActionRow paginationRow = rankingPresenter.createLinePaginationButtonsRow(discordServerId, lineId, newCriterion, currentPage, totalPages);
+
+            event.getHook().editOriginalEmbeds(newEmbed).setComponents(sortRow1, sortRow2, paginationRow).queue();
+
+        } catch (IllegalArgumentException e) {
+            log.error("라인 정렬 버튼 처리 중 Enum 오류 발생 (기준명: {}): {}", event.getComponentId(), e.getMessage());
+            event.getHook().sendMessage("❌ 오류: 버튼 ID 파싱 중 알 수 없는 정렬 기준이 발생했습니다.").setEphemeral(true).queue();
+        } catch (Exception e) {
+            log.error("라인 정렬 버튼 처리 중 오류 발생: {}", e.getMessage(), e);
+            event.getHook().sendMessage("❌ 라인 정렬 처리 중 오류가 발생했습니다.").setEphemeral(true).queue();
+        }
+    }
+
+    private void handleLinePaginationButtonInternal(ButtonInteractionEvent event) {
+        try {
+            String componentId = event.getComponentId();
+            String[] parts = componentId.split("_");
+            int length = parts.length;
+
+            // ID 구조: page_line_rank_CRITERION_SERVERID_LINEID_CURRENTPAGE_ACTION
+            Long discordServerId = Long.parseLong(parts[length - 4]);
+            Long lineId = Long.parseLong(parts[length - 3]);
+            int currentPage = Integer.parseInt(parts[length - 2]);
+            String pageAction = parts[length - 1];
+
+            StringBuilder criterionBuilder = new StringBuilder();
+            for (int i = 3; i < length - 4; i++) {
+                if (i > 3) criterionBuilder.append("_");
+                criterionBuilder.append(parts[i]);
+            }
+            String criterionName = criterionBuilder.toString();
+
+            RankingCriterion currentCriterion = RankingCriterion.valueOf(criterionName);
+
+            List<LineRankDto> allRankedList = rankingService.getLineRanking(discordServerId, lineId, MIN_GAMES_THRESHOLD, currentCriterion);
+            if (allRankedList.isEmpty()) return;
+
+            int totalPages = getTotalPages(allRankedList.size(), ITEMS_PER_PAGE);
+            int newPage = currentPage;
+
+            if ("next".equals(pageAction) && currentPage < totalPages) {
+                newPage++;
+            } else if ("prev".equals(pageAction) && currentPage > 1) {
+                newPage--;
+            } else {
+                return;
+            }
+
+            List<LineRankDto> currentPageList = getPage(allRankedList, newPage, ITEMS_PER_PAGE);
+            MessageEmbed newEmbed = rankingPresenter.createLineRankingEmbed(event.getGuild().getName(), "라인", allRankedList, currentPageList, newPage, totalPages);
+            ActionRow sortRow1 = rankingPresenter.createLineSortButtonsRow1(discordServerId, lineId, currentCriterion);
+            ActionRow sortRow2 = rankingPresenter.createLineSortButtonsRow2(discordServerId, lineId, currentCriterion);
+            ActionRow paginationRow = rankingPresenter.createLinePaginationButtonsRow(discordServerId, lineId, currentCriterion, newPage, totalPages);
+
+            event.getHook().editOriginalEmbeds(newEmbed).setComponents(sortRow1, sortRow2, paginationRow).queue();
+
+        } catch (NumberFormatException e) {
+            log.error("라인 페이지네이션 버튼 처리 중 NumberFormatException 발생 (ID 인덱스 오류): {}", e.getMessage(), e);
+            event.getHook().sendMessage("❌ 오류: 버튼 ID 파싱 중 치명적인 오류가 발생했습니다. 개발자에게 문의하세요.").setEphemeral(true).queue();
+        } catch (Exception e) {
+            log.error("라인 페이지네이션 버튼 처리 중 오류 발생: {}", e.getMessage(), e);
+            event.getHook().sendMessage("❌ 페이지 처리 중 오류가 발생했습니다.").setEphemeral(true).queue();
         }
     }
 

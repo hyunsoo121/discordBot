@@ -77,6 +77,31 @@ public class RankingPresenter {
         return embedBuilder.build();
     }
 
+        public MessageEmbed createLineRankingEmbed(String serverName, String lineDisplayName, java.util.List<com.discordBot.demo.domain.dto.LineRankDto> allRankedList, java.util.List<com.discordBot.demo.domain.dto.LineRankDto> currentPageList, int currentPage, int totalPages) {
+                EmbedBuilder embedBuilder = new EmbedBuilder();
+                embedBuilder.setTitle("🏅 " + serverName + " - " + lineDisplayName + " 라인 랭킹");
+                embedBuilder.setColor(new Color(70,130,180));
+
+                embedBuilder.setDescription("🔎 총 " + allRankedList.size() + "명 | 페이지: " + currentPage + "/" + totalPages + "\n(상위 " + currentPageList.size() + "명 표시)");
+
+                StringBuilder sb = new StringBuilder();
+                sb.append("`순위 | KDA | GPM | DPM | KP | 승률 | 게임 수`\n");
+                sb.append("-----------------------------------------------\n");
+
+                int startRank = (currentPage - 1) * ITEMS_PER_PAGE + 1;
+                for (int i = 0; i < currentPageList.size(); i++) {
+                        com.discordBot.demo.domain.dto.LineRankDto dto = currentPageList.get(i);
+                        String userMention = String.format("<@%d>", dto.getDiscordUserId());
+                        sb.append(String.format("`%3d | %4.2f | %4.0f | %4.0f | %4.0f%% | %4.0f%% | %3d` %s\n",
+                                        startRank + i,
+                                        dto.getKda(), dto.getGpm(), dto.getDpm(), dto.getKillParticipation() * 100, dto.getWinRate() * 100, dto.getTotalGames(), userMention
+                        ));
+                }
+
+                embedBuilder.addField(lineDisplayName + " 라인 랭킹", sb.toString(), false);
+                return embedBuilder.build();
+        }
+
     // --- 버튼 생성 로직 ---
     public ActionRow createSortButtonsRow1(Long serverId, RankingCriterion activeCriterion) {
         return createSortButtonsRow(serverId, activeCriterion, PRIMARY_CRITERIA);
@@ -104,6 +129,47 @@ public class RankingPresenter {
 
         return ActionRow.of(prevButton, statusButton, nextButton);
     }
+
+        // --- 라인별 정렬/페이지네이션 버튼 생성 (라인 랭킹 전용) ---
+        public ActionRow createLineSortButtonsRow1(Long serverId, Long lineId, RankingCriterion activeCriterion) {
+                return createLineSortButtonsRow(serverId, lineId, activeCriterion, PRIMARY_CRITERIA);
+        }
+
+        public ActionRow createLineSortButtonsRow2(Long serverId, Long lineId, RankingCriterion activeCriterion) {
+                return createLineSortButtonsRow(serverId, lineId, activeCriterion, SECONDARY_CRITERIA);
+        }
+
+        private ActionRow createLineSortButtonsRow(Long serverId, Long lineId, RankingCriterion activeCriterion, List<RankingCriterion> criteria) {
+                return ActionRow.of(criteria.stream()
+                                .map(criterion -> {
+                                        String buttonId = RankingHandler.SORT_LINE_BUTTON_ID_PREFIX + criterion.name() + "_" + serverId + "_" + lineId;
+                                        boolean isActive = criterion == activeCriterion;
+
+                                        return isActive
+                                                        ? Button.success(buttonId, "🏆 " + criterion.getDisplayName())
+                                                        : Button.secondary(buttonId, criterion.getDisplayName());
+                                })
+                                .collect(Collectors.toList()));
+        }
+
+        public ActionRow createLinePaginationButtonsRow(Long serverId, Long lineId, RankingCriterion activeCriterion, int currentPage, int totalPages) {
+                String criterionName = activeCriterion.name();
+
+                Button prevButton = Button.primary(
+                                                RankingHandler.PAGINATION_LINE_BUTTON_ID_PREFIX + criterionName + "_" + serverId + "_" + lineId + "_" + currentPage + "_prev",
+                                                "◀️ 이전 페이지")
+                                .withDisabled(currentPage <= 1);
+
+                Button statusButton = Button.secondary("page_status", currentPage + " / " + totalPages)
+                                .withDisabled(true);
+
+                Button nextButton = Button.primary(
+                                                RankingHandler.PAGINATION_LINE_BUTTON_ID_PREFIX + criterionName + "_" + serverId + "_" + lineId + "_" + currentPage + "_next",
+                                                "다음 페이지 ▶️")
+                                .withDisabled(currentPage >= totalPages);
+
+                return ActionRow.of(prevButton, statusButton, nextButton);
+        }
 
     private ActionRow createSortButtonsRow(Long serverId, RankingCriterion activeCriterion, List<RankingCriterion> criteria) {
         return ActionRow.of(criteria.stream()
