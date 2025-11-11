@@ -9,7 +9,7 @@ import com.discordBot.demo.domain.repository.LolAccountRepository;
 import com.discordBot.demo.service.MatchRecordService;
 import com.discordBot.demo.service.ImageAnalysisService;
 import com.discordBot.demo.service.ChampionService;
-import com.discordBot.demo.service.TemporaryMatchStorageService; // ⭐ Storage Service 재추가
+import com.discordBot.demo.service.TemporaryMatchStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.dv8tion.jda.api.entities.Message.Attachment;
@@ -42,7 +42,7 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
     private final LolAccountRepository lolAccountRepository;
     private final MatchImagePresenter matchImagePresenter;
     private final ChampionService championService;
-    private final TemporaryMatchStorageService storageService; // ⭐ Storage Service 재추가
+    private final TemporaryMatchStorageService storageService;
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
@@ -107,6 +107,7 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
 
         String messageContent = matchImagePresenter.createConfirmationMessageContent(dto);
 
+        // MatchImagePresenter의 버튼 생성 메서드 시그니처에 맞게 수정 필요
         List<ActionRow> buttonRows = matchImagePresenter.createConfirmationButtonsWithId(initiatorId, tempMatchId, dto.getPlayerStatsList());
 
         hook.editOriginal(messageContent)
@@ -132,9 +133,9 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
 
         Long tempMatchId = Long.parseLong(parts[2]);
 
-        // CONFIRM / CANCEL은 DB 작업이 있으므로 deferReply를 시도해야 합니다.
+        // CONFIRM / CANCEL 처리 (DB 작업이 있으므로 deferReply)
         if (buttonAction.equals(MatchImageHandler.BUTTON_ID_CONFIRM) || buttonAction.equals(MatchImageHandler.BUTTON_ID_CANCEL)) {
-            event.deferReply(true).queue(); // Hook 사용을 위한 deferral
+            event.deferReply(true).queue();
 
             MatchRegistrationDto finalDto = storageService.getTemporaryMatch(tempMatchId);
             storageService.removeTemporaryMatch(tempMatchId);
@@ -152,7 +153,7 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
             return;
         }
 
-        // EDIT 버튼 클릭 처리
+        // EDIT 버튼 클릭 처리 (모달 응답을 위해 defer 없이 replyModal)
         if (buttonAction.equals(MatchImageHandler.BUTTON_ID_EDIT)) {
             // ID 포맷: BUTTON_ID_EDIT:INITIATOR_ID:TEMP_MATCH_ID:TEAM:CATEGORY
             String teamFilter = parts[3];
@@ -196,10 +197,9 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
                 .filter(p -> p.getTeam().equalsIgnoreCase(teamFilter))
                 .collect(Collectors.toList());
 
-        // ⭐ 모달 생성 시 tempMatchId와 category를 ID에 포함하여 제출 시 복원 가능하도록 함
         Modal editModal = createEditModal(playersToEdit, tempMatchId, teamFilter, category);
 
-        // ⭐ 모달 생성 및 응답: defer 없이 replyModal로 즉시 응답하여 충돌 방지
+        // 모달 생성 및 응답: defer 없이 replyModal로 즉시 응답하여 충돌 방지
         event.replyModal(editModal).queue();
     }
 
@@ -270,7 +270,7 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
 
         String modalId = event.getModalId();
         String[] parts = modalId.split(":");
-        if (!parts[0].equals(MatchImageHandler.MODAL_ID_BASE)) return; // 모달 ID 확인
+        if (!parts[0].equals(MatchImageHandler.MODAL_ID_BASE)) return;
 
         // ID 포맷: MODAL_ID_BASE:TEMP_MATCH_ID:TEAM:CATEGORY
         Long tempMatchId = Long.parseLong(parts[1]);
@@ -300,24 +300,26 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
                 String newValue = event.getValue(componentId).getAsString().trim();
 
                 if (category.equals("CHAMP")) {
-                    // 유효성 검사: championService.findChampionByIdentifier(newValue).isEmpty()
-                    if (championService.findChampionByIdentifier(newValue).isEmpty()) { throw new IllegalArgumentException("유효하지 않은 챔피언 이름입니다."); }
+                    if (championService.findChampionByIdentifier(newValue).isEmpty()) { throw new IllegalArgumentException("'" + newValue + "'는 유효한 챔피언 이름이 아닙니다."); }
                     player.setChampionName(newValue);
                 } else if (category.equals("LANE")) {
-                    // 유효성 검사: isValidLane(newValue.toUpperCase())
-                    if (!isValidLane(newValue.toUpperCase())) { throw new IllegalArgumentException("유효하지 않은 라인 정보입니다. (TOP, JUNGLE, MID, ADC, SUPPORT)"); }
-                    player.setLaneName(newValue.toUpperCase());
+                    String normalizedLane = normalizeLaneInput(newValue); // 유연성 헬퍼 사용
+                    if (!isValidLane(normalizedLane)) { throw new IllegalArgumentException("'" + newValue + "'는 유효한 라인 정보가 아닙니다. (TOP, JUNGLE, MID, ADC, SUPPORT)"); }
+                    player.setLaneName(normalizedLane);
                 } else { // ACCOUNT
-                    // 유효성 검사: parseLolNameTag, lolAccountRepository.findByGameNameAndTagLineAndGuildServer_DiscordServerId
                     String[] partsLol = parseLolNameTag(newValue);
+                    String gameName = partsLol[0];
+                    String tagLine = partsLol[1];
                     Long serverId = event.getGuild().getIdLong();
+
                     Optional<LolAccount> accountOpt = lolAccountRepository.findByGameNameAndTagLineAndGuildServer_DiscordServerId(
-                            partsLol[0], partsLol[1], serverId);
+                            gameName, tagLine, serverId);
 
-                    if (accountOpt.isEmpty()) { throw new IllegalArgumentException("서버에 등록되지 않은 계정입니다."); }
+                    if (accountOpt.isEmpty()) { throw new IllegalArgumentException("'" + newValue + "' 계정은 서버에 등록되지 않았거나 이름#태그가 일치하지 않습니다."); }
 
-                    player.setLolGameName(partsLol[0]);
-                    player.setLolTagLine(partsLol[1]);
+                    // DB에서 찾은 실제 대소문자 형태를 저장 (Repository가 대소문자를 처리하도록 가정)
+                    player.setLolGameName(gameName);
+                    player.setLolTagLine(tagLine);
                 }
             }
 
@@ -340,12 +342,47 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
         }
     }
 
-    // ⭐ 헬퍼 메서드: 라인 체크 (이전 논의에서 재사용)
+    // -----------------------------------------------------------
+    // 4. 헬퍼 메서드 (유연성 확보 로직)
+    // -----------------------------------------------------------
+
+    /**
+     * 라인 입력에 대한 일반적인 오타나 약어를 정규화하여 올바른 라인 코드를 반환합니다.
+     */
+    private String normalizeLaneInput(String input) {
+        if (input == null || input.trim().isEmpty()) return "UNKNOWN";
+
+        String normalized = input.toUpperCase().replaceAll("[^A-Z]", "");
+
+        if (normalized.equals("AD") || normalized.equals("ADC") || normalized.equals("BOT") || normalized.equals("BOTTOM")) {
+            return "ADC";
+        }
+        if (normalized.equals("MID") || normalized.equals("MIDDLE")) {
+            return "MID";
+        }
+        if (normalized.equals("JG") || normalized.equals("JGL") || normalized.equals("JUNGLE")) {
+            return "JUNGLE";
+        }
+        if (normalized.equals("SUP") || normalized.equals("SUPPORT") || normalized.equals("SUPP")) {
+            return "SUPPORT";
+        }
+        if (normalized.equals("TOP")) {
+            return "TOP";
+        }
+
+        return normalized;
+    }
+
+    /**
+     * 라인 유효성 검사 (대소문자 무시를 위해 normalizeLaneInput의 결과를 받음)
+     */
     private boolean isValidLane(String lane) {
         return List.of("TOP", "JUNGLE", "MID", "ADC", "SUPPORT").contains(lane);
     }
 
-    // ⭐ 헬퍼 메서드: 계정명#태그라인 파싱 (이전 논의에서 재사용)
+    /**
+     * Riot 계정명#태그라인 파싱
+     */
     private String[] parseLolNameTag(String lolNameTag) throws IllegalArgumentException {
         Pattern pattern = Pattern.compile("(.+)#(.+)");
         Matcher matcher = pattern.matcher(lolNameTag);
