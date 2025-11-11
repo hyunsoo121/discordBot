@@ -115,15 +115,17 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                 .collect(Collectors.joining(", "));
         String championHintList = String.join(", ", championService.getAllChampionNamesForHint());
 
-        // ⭐⭐ NEW: Preferred Lane 힌트 목록 생성 (Gemini 프롬프트에 전달할 형식) ⭐⭐
         String preferredLaneHintList = registeredAccounts.stream()
                 .map(acc -> {
-                    // 첫 번째 선호 라인을 가져오거나, 없으면 'UNKNOWN'으로 표시
-                    String preferredLane = acc.getPreferredLines().isEmpty()
-                            ? "UNKNOWN"
-                            : acc.getPreferredLines().iterator().next().getName().toUpperCase();
-                    // Riot ID#TagLine:PREF_LANE 형식으로 문자열 생성
-                    return String.format("%s#%s:%s", acc.getGameName(), acc.getTagLine(), preferredLane);
+                    // 해당 계정의 모든 선호 라인 이름을 쉼표로 연결
+                    String preferredLanesCsv = acc.getPreferredLines().stream()
+                            .map(line -> line.getName().toUpperCase())
+                            .collect(Collectors.joining(","));
+
+                    String displayLanes = StringUtils.hasText(preferredLanesCsv) ? preferredLanesCsv : "UNKNOWN";
+
+                    // Riot ID#TagLine:PREF_LANE_1,PREF_LANE_2 형식으로 문자열 생성
+                    return String.format("%s#%s:%s", acc.getGameName(), acc.getTagLine(), displayLanes);
                 })
                 .collect(Collectors.joining(", "));
 
