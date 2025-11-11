@@ -4,12 +4,14 @@ import com.discordBot.demo.discord.handler.MatchImageHandler;
 import com.discordBot.demo.discord.presenter.MatchImagePresenter;
 import com.discordBot.demo.domain.dto.MatchRegistrationDto;
 import com.discordBot.demo.domain.dto.PlayerStatsDto;
+import com.discordBot.demo.domain.dto.RiotAccountDto;
 import com.discordBot.demo.domain.entity.LolAccount;
 import com.discordBot.demo.domain.repository.LolAccountRepository;
 import com.discordBot.demo.service.MatchRecordService;
 import com.discordBot.demo.service.ImageAnalysisService;
 import com.discordBot.demo.service.ChampionService;
 import com.discordBot.demo.service.TemporaryMatchStorageService;
+import com.discordBot.demo.service.RiotApiService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.dv8tion.jda.api.entities.Message.Attachment;
@@ -43,80 +45,50 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
     private final MatchImagePresenter matchImagePresenter;
     private final ChampionService championService;
     private final TemporaryMatchStorageService storageService;
+    private final RiotApiService riotApiService;
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     // -----------------------------------------------------------
-    // 1. 슬래시 커맨드 처리 (분석 및 임시 저장)
+    // 1. 슬래시 커맨드 처리 (생략)
     // -----------------------------------------------------------
 
     @Override
     public void handleMatchUploadCommand(SlashCommandInteractionEvent event) {
-
-        if (!event.isAcknowledged()) {
-            event.deferReply(true).queue();
-        }
-
+        if (!event.isAcknowledged()) { event.deferReply(true).queue(); }
         OptionMapping imageOption = event.getOption("input-image");
-
-        if (imageOption == null) {
-            event.getHook().sendMessage("❌ 오류: 이미지 파일을 첨부해야 합니다.").queue();
-            return;
-        }
-
+        if (imageOption == null) { event.getHook().sendMessage("❌ 오류: 이미지 파일을 첨부해야 합니다.").queue(); return; }
         Attachment imageAttachment = imageOption.getAsAttachment();
         String initiatorId = event.getUser().getId();
         Long serverId = event.getGuild().getIdLong();
-
-        if (!imageAttachment.isImage()) {
-            event.getHook().sendMessage("❌ 오류: 첨부된 파일이 이미지가 아닙니다.").queue();
-            return;
-        }
+        if (!imageAttachment.isImage()) { event.getHook().sendMessage("❌ 오류: 첨부된 파일이 이미지가 아닙니다.").queue(); return; }
 
         event.getHook().editOriginal(matchImagePresenter.createInitialAnalysisMessage()).queue();
-
         List<LolAccount> allRegisteredAccounts = lolAccountRepository.findAllByGuildServer_DiscordServerId(serverId);
         log.info("OCR 힌트를 위해 서버 {}에 등록된 계정 {}개를 로드했습니다.", serverId, allRegisteredAccounts.size());
 
         executor.execute(() -> {
             try {
-                MatchRegistrationDto resultDto = imageAnalysisService.analyzeAndStructureData(
-                        imageAttachment.getUrl(),
-                        serverId,
-                        allRegisteredAccounts
-                );
-
+                MatchRegistrationDto resultDto = imageAnalysisService.analyzeAndStructureData(imageAttachment.getUrl(), serverId, allRegisteredAccounts);
                 Long tempMatchId = storageService.saveTemporaryMatch(resultDto);
-
                 sendConfirmationMessage(event.getHook(), resultDto, initiatorId, tempMatchId);
-
             } catch (IllegalArgumentException e) {
-                event.getHook().editOriginal("❌ 분석 오류: " + e.getMessage())
-                        .setComponents()
-                        .queue();
+                event.getHook().editOriginal("❌ 분석 오류: " + e.getMessage()).setComponents().queue();
             } catch (Exception e) {
                 log.error("경기 기록 처리 중 오류 발생: {}", e.getMessage(), e);
-                event.getHook().editOriginal("❌ 서버 오류: 이미지 분석 중 예상치 못한 오류가 발생했습니다. 로그를 확인하세요.")
-                        .setComponents()
-                        .queue();
+                event.getHook().editOriginal("❌ 서버 오류: 이미지 분석 중 예상치 못한 오류가 발생했습니다. 로그를 확인하세요.").setComponents().queue();
             }
         });
     }
 
     private void sendConfirmationMessage(InteractionHook hook, MatchRegistrationDto dto, String initiatorId, Long tempMatchId) {
-
         String messageContent = matchImagePresenter.createConfirmationMessageContent(dto);
-
-        // MatchImagePresenter의 버튼 생성 메서드 시그니처에 맞게 수정 필요
         List<ActionRow> buttonRows = matchImagePresenter.createConfirmationButtonsWithId(initiatorId, tempMatchId, dto.getPlayerStatsList());
-
-        hook.editOriginal(messageContent)
-                .setComponents(buttonRows)
-                .queue();
+        hook.editOriginal(messageContent).setComponents(buttonRows).queue();
     }
 
     // -----------------------------------------------------------
-    // 2. 버튼 인터랙션 처리 (확인, 취소, 수정)
+    // 2. 버튼 인터랙션 처리 (생략)
     // -----------------------------------------------------------
 
     @Override
@@ -133,10 +105,8 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
 
         Long tempMatchId = Long.parseLong(parts[2]);
 
-        // CONFIRM / CANCEL 처리 (DB 작업이 있으므로 deferReply)
         if (buttonAction.equals(MatchImageHandler.BUTTON_ID_CONFIRM) || buttonAction.equals(MatchImageHandler.BUTTON_ID_CANCEL)) {
             event.deferReply(true).queue();
-
             MatchRegistrationDto finalDto = storageService.getTemporaryMatch(tempMatchId);
             storageService.removeTemporaryMatch(tempMatchId);
 
@@ -153,27 +123,19 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
             return;
         }
 
-        // EDIT 버튼 클릭 처리 (모달 응답을 위해 defer 없이 replyModal)
         if (buttonAction.equals(MatchImageHandler.BUTTON_ID_EDIT)) {
-            // ID 포맷: BUTTON_ID_EDIT:INITIATOR_ID:TEMP_MATCH_ID:TEAM:CATEGORY
             String teamFilter = parts[3];
             String category = parts[4];
             handleEditButton(event, tempMatchId, teamFilter, category);
         }
     }
 
-    // 최종 등록 로직
     private void handleConfirm(ButtonInteractionEvent event, MatchRegistrationDto finalDto) {
         event.getHook().editOriginal("💾 DB에 기록을 저장 중입니다...").setComponents().queue();
-
         executor.execute(() -> {
             try {
                 matchRecordService.registerMatch(finalDto);
-
-                event.getHook().editOriginal("✅ **최종 등록 완료!** 경기 기록이 성공적으로 저장되었습니다.")
-                        .setComponents()
-                        .queue();
-
+                event.getHook().editOriginal("✅ **최종 등록 완료!** 경기 기록이 성공적으로 저장되었습니다.").setComponents().queue();
             } catch (IllegalArgumentException e) {
                 log.error("DB 등록 오류 (비즈니스): {}", e.getMessage(), e);
                 event.getHook().editOriginal("❌ 등록 오류: " + e.getMessage() + "\n 기록을 다시 확인해주세요. 재시도는 `/match-upload`를 사용하세요.").setComponents().queue();
@@ -184,9 +146,7 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
         });
     }
 
-    // 모달 띄우기 로직
     private void handleEditButton(ButtonInteractionEvent event, Long tempMatchId, String teamFilter, String category) {
-
         MatchRegistrationDto dto = storageService.getTemporaryMatch(tempMatchId);
         if (dto == null) {
             event.reply("❌ 오류: 이 경기 세션이 만료되었거나 이미 처리되었습니다.").setEphemeral(true).queue();
@@ -198,14 +158,10 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
                 .collect(Collectors.toList());
 
         Modal editModal = createEditModal(playersToEdit, tempMatchId, teamFilter, category);
-
-        // 모달 생성 및 응답: defer 없이 replyModal로 즉시 응답하여 충돌 방지
         event.replyModal(editModal).queue();
     }
 
-    // 모달 생성 헬퍼
     private Modal createEditModal(List<PlayerStatsDto> players, Long tempMatchId, String teamFilter, String category) {
-
         String teamLabel = teamFilter.equals("BLUE") ? "🟦 블루팀" : "🟥 레드팀";
         String categoryLabel;
         String componentIdPrefix;
@@ -227,13 +183,11 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
                 throw new IllegalArgumentException("유효하지 않은 수정 카테고리입니다: " + category);
         }
 
-        // ID 포맷: MODAL_ID_BASE:TEMP_MATCH_ID:TEAM:CATEGORY
         Modal.Builder modalBuilder = Modal.create(
                 MatchImageHandler.MODAL_ID_BASE + ":" + tempMatchId + ":" + teamFilter + ":" + category,
                 teamLabel + " " + categoryLabel + " 수정"
         );
 
-        // 5명의 플레이어 데이터를 5개의 TextInput으로 생성 (Modal 제한 5개 준수)
         for (int i = 0; i < 5; i++) {
             PlayerStatsDto player = players.get(i);
             String initialValue;
@@ -243,14 +197,25 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
             } else if (category.equals("LANE")) {
                 initialValue = player.getLaneName();
             } else { // ACCOUNT
-                initialValue = player.getLolGameName() + "#" + player.getLolTagLine();
+                String tagLine = player.getLolTagLine() != null ? player.getLolTagLine() : "NONE";
+                initialValue = player.getLolGameName() + "#" + tagLine;
             }
+
+            String safeValue = (initialValue == null || initialValue.trim().isEmpty() || initialValue.equalsIgnoreCase("UNKNOWN") || initialValue.equalsIgnoreCase("UNKNOWN#NONE"))
+                    ? " "
+                    : initialValue;
+
+            if (category.equals("ACCOUNT") && safeValue.endsWith("#NONE")) {
+                safeValue = player.getLolGameName() + "#";
+            }
+            safeValue = safeValue.isBlank() ? " " : safeValue;
+
 
             String label = String.format("%d. %s", i + 1, player.getLolGameName());
             String componentId = componentIdPrefix + i;
 
             TextInput input = TextInput.create(componentId, label, TextInputStyle.SHORT)
-                    .setValue(initialValue.equalsIgnoreCase("UNKNOWN") ? "" : initialValue)
+                    .setValue(safeValue)
                     .setPlaceholder("현재 값: " + initialValue)
                     .setRequired(true)
                     .build();
@@ -272,7 +237,6 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
         String[] parts = modalId.split(":");
         if (!parts[0].equals(MatchImageHandler.MODAL_ID_BASE)) return;
 
-        // ID 포맷: MODAL_ID_BASE:TEMP_MATCH_ID:TEAM:CATEGORY
         Long tempMatchId = Long.parseLong(parts[1]);
         String teamFilter = parts[2];
         String category = parts[3];
@@ -291,7 +255,6 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
                 .collect(Collectors.toList());
 
         try {
-            // ⭐ 모달 데이터 추출 및 DTO 업데이트
             for (int i = 0; i < 5; i++) {
                 PlayerStatsDto player = playersToEdit.get(i);
                 String componentIdPrefix = category.substring(0, 1) + "_";
@@ -303,23 +266,41 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
                     if (championService.findChampionByIdentifier(newValue).isEmpty()) { throw new IllegalArgumentException("'" + newValue + "'는 유효한 챔피언 이름이 아닙니다."); }
                     player.setChampionName(newValue);
                 } else if (category.equals("LANE")) {
-                    String normalizedLane = normalizeLaneInput(newValue); // 유연성 헬퍼 사용
+                    String normalizedLane = normalizeLaneInput(newValue);
                     if (!isValidLane(normalizedLane)) { throw new IllegalArgumentException("'" + newValue + "'는 유효한 라인 정보가 아닙니다. (TOP, JUNGLE, MID, ADC, SUPPORT)"); }
                     player.setLaneName(normalizedLane);
                 } else { // ACCOUNT
+
                     String[] partsLol = parseLolNameTag(newValue);
                     String gameName = partsLol[0];
                     String tagLine = partsLol[1];
+
+                    // 1. Riot API 호출하여 계정 유효성 검증 및 현재 대소문자 획득 (Canonical Name)
+                    Optional<RiotAccountDto> riotAccountOpt = riotApiService.verifyNickname(gameName, tagLine);
+
+                    if (riotAccountOpt.isEmpty()) {
+                        throw new IllegalArgumentException("'" + newValue + "' 계정을 Riot API에서 찾을 수 없습니다. 이름과 태그라인을 정확히 입력해 주세요.");
+                    }
+
+                    RiotAccountDto verifiedAccount = riotAccountOpt.get();
+
+                    // ⭐ 2. DB 등록 확인: Riot API가 반환한 Canonical Name을 사용하여 DB에서 대소문자 구분하여 조회
                     Long serverId = event.getGuild().getIdLong();
 
-                    Optional<LolAccount> accountOpt = lolAccountRepository.findByGameNameAndTagLineAndGuildServer_DiscordServerId(
-                            gameName, tagLine, serverId);
+                    Optional<LolAccount> existingAccountOpt = lolAccountRepository.findByGameNameAndTagLineAndGuildServer_DiscordServerId(
+                            verifiedAccount.getGameName(), // 대소문자 변환 없이 Riot API가 반환한 이름 사용
+                            verifiedAccount.getTagLine(),   // 대소문자 변환 없이 Riot API가 반환한 태그 사용
+                            serverId
+                    );
 
-                    if (accountOpt.isEmpty()) { throw new IllegalArgumentException("'" + newValue + "' 계정은 서버에 등록되지 않았거나 이름#태그가 일치하지 않습니다."); }
+                    if (existingAccountOpt.isEmpty()) {
+                        throw new IllegalArgumentException("'" + verifiedAccount.getGameName() + "#" + verifiedAccount.getTagLine() + "' 계정은 이 서버에 등록되지 않았습니다.");
+                    }
 
-                    // DB에서 찾은 실제 대소문자 형태를 저장 (Repository가 대소문자를 처리하도록 가정)
-                    player.setLolGameName(gameName);
-                    player.setLolTagLine(tagLine);
+
+                    // 3. DTO 업데이트 (API가 반환한 정확한 대소문자 형태를 저장)
+                    player.setLolGameName(verifiedAccount.getGameName());
+                    player.setLolTagLine(verifiedAccount.getTagLine());
                 }
             }
 
@@ -343,12 +324,9 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
     }
 
     // -----------------------------------------------------------
-    // 4. 헬퍼 메서드 (유연성 확보 로직)
+    // 4. 헬퍼 메서드 (유연성 확보 로직 - 생략)
     // -----------------------------------------------------------
 
-    /**
-     * 라인 입력에 대한 일반적인 오타나 약어를 정규화하여 올바른 라인 코드를 반환합니다.
-     */
     private String normalizeLaneInput(String input) {
         if (input == null || input.trim().isEmpty()) return "UNKNOWN";
 
@@ -357,10 +335,10 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
         if (normalized.equals("AD") || normalized.equals("ADC") || normalized.equals("BOT") || normalized.equals("BOTTOM")) {
             return "ADC";
         }
-        if (normalized.equals("MID") || normalized.equals("MIDDLE")) {
+        if (normalized.equals("MID")) {
             return "MID";
         }
-        if (normalized.equals("JG") || normalized.equals("JGL") || normalized.equals("JUNGLE")) {
+        if (normalized.equals("JG") || normalized.equals("JGL") || normalized.equals("JUNGLE") || normalized.equals("JUG")) {
             return "JUNGLE";
         }
         if (normalized.equals("SUP") || normalized.equals("SUPPORT") || normalized.equals("SUPP")) {
@@ -373,16 +351,10 @@ public class MatchImageHandlerImpl implements MatchImageHandler {
         return normalized;
     }
 
-    /**
-     * 라인 유효성 검사 (대소문자 무시를 위해 normalizeLaneInput의 결과를 받음)
-     */
     private boolean isValidLane(String lane) {
         return List.of("TOP", "JUNGLE", "MID", "ADC", "SUPPORT").contains(lane);
     }
 
-    /**
-     * Riot 계정명#태그라인 파싱
-     */
     private String[] parseLolNameTag(String lolNameTag) throws IllegalArgumentException {
         Pattern pattern = Pattern.compile("(.+)#(.+)");
         Matcher matcher = pattern.matcher(lolNameTag);
