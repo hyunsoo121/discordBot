@@ -20,8 +20,8 @@ public class LineInitializer {
                 List<Line> fixedLines = Arrays.asList(
                         createLine("TOP", "탑"),
                         createLine("JUNGLE", "정글"),
-                        createLine("MIDDLE", "미드"),
-                        createLine("BOTTOM", "원딜"),
+                        createLine("MID", "미드"),
+                        createLine("ADC", "원딜"),
                         createLine("SUPPORT", "서포터")
                 );
 

@@ -54,7 +54,7 @@ public class UserServiceImpl implements UserService {
             // 각 라인 이름으로 Line 엔티티 조회 및 Set에 추가
             for (String lineName : lineNames) {
                 Line line = lineRepository.findByName(lineName)
-                        .orElseThrow(() -> new IllegalArgumentException("❌ 오류: 선호 라인 [" + lineName + "] 정보를 찾을 수 없습니다. (유효 라인: TOP, JUNGLE, MIDDLE, BOTTOM, UTILITY)"));
+                        .orElseThrow(() -> new IllegalArgumentException("❌ 오류: 선호 라인 [" + lineName + "] 정보를 찾을 수 없습니다. (유효 라인: TOP, JUNGLE, MID, ADC, UTILITY)"));
                 preferredLines.add(line);
             }
 

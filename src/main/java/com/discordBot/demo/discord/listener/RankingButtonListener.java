@@ -16,7 +16,7 @@ public class RankingButtonListener extends ListenerAdapter {
     public void onButtonInteraction(ButtonInteractionEvent event) {
         String componentId = event.getComponentId();
 
-        event.deferEdit().queue();
+//        event.deferEdit().queue();
 
         if (componentId.startsWith(RankingHandler.SORT_BUTTON_ID_PREFIX) ||
                 componentId.startsWith(RankingHandler.PAGINATION_BUTTON_ID_PREFIX)) {

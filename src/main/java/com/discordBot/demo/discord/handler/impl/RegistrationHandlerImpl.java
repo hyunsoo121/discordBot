@@ -28,10 +28,10 @@ public class RegistrationHandlerImpl implements RegistrationHandler {
     private static final Map<String, String> KOREAN_LANE_MAP = Map.of(
             "탑", "TOP",
             "정글", "JUNGLE",
-            "미드", "MIDDLE",
+            "미드", "MID",
             // LineInitializer: BOTTOM - 원딜 (유의어: 바텀)
-            "원딜", "BOTTOM",
-            "바텀", "BOTTOM",
+            "원딜", "ADC",
+            "바텀", "ADC",
             // LineInitializer: SUPPORT - 서포터 (유의어: 서폿)
             "서포터", "SUPPORT",
             "서폿", "SUPPORT"
