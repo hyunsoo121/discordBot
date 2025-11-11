@@ -1,9 +1,6 @@
 package com.discordBot.demo.config;
 
-import com.discordBot.demo.discord.listener.MatchButtonListener;
-import com.discordBot.demo.discord.listener.RankingButtonListener;
-import com.discordBot.demo.discord.listener.SlashCommandListener;
-import com.discordBot.demo.discord.listener.UserButtonListener;
+import com.discordBot.demo.discord.listener.*;
 import lombok.RequiredArgsConstructor;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
@@ -21,6 +18,8 @@ public class DiscordBotConfig {
     private final RankingButtonListener rankingButtonListener;
     private final MatchButtonListener matchButtonListener;
     private final UserButtonListener userButtonListener;
+    private final MatchModalListener matchModalListener;
+    private final InteractionDebugListener interactionDebugListener;
 
     @Value("${spring.discord.bot.token}")
     private String token;
@@ -31,10 +30,12 @@ public class DiscordBotConfig {
                 .setActivity(Activity.playing("내전 기록을 보관하는 중"))
                 .enableIntents(GatewayIntent.MESSAGE_CONTENT)
                 .addEventListeners(
-                        slashCommandListener, // Slash 명령어 처리
-                        rankingButtonListener, // 랭킹 버튼 이벤트 리스너 등록
-                        matchButtonListener, // 매치 등록/수정 버튼 이벤트 리스너
-                        userButtonListener // 유저 검색 버튼 이벤트 리스너
+                        slashCommandListener,
+                        rankingButtonListener,
+                        matchButtonListener,
+                        userButtonListener,
+                        matchModalListener
+//                        interactionDebugListener
                 )
                 .build();
 
