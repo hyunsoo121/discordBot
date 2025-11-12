@@ -31,7 +31,8 @@ dependencies {
 	implementation 'net.dv8tion:JDA:5.6.1'
 	implementation 'org.springframework.boot:spring-boot-starter-webflux' // Webclient
  	compileOnly 'org.projectlombok:lombok'
-	runtimeOnly 'com.h2database:h2'
+//	runtimeOnly 'com.h2database:h2'
+	runtimeOnly 'org.postgresql:postgresql'
 	annotationProcessor 'org.projectlombok:lombok'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
