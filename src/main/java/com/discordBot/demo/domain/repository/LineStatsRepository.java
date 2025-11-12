@@ -5,6 +5,7 @@ import com.discordBot.demo.domain.entity.LineStats;
 import com.discordBot.demo.domain.entity.LineStatsId;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface LineStatsRepository extends JpaRepository<LineStats, LineStatsId> {
@@ -18,4 +19,6 @@ public interface LineStatsRepository extends JpaRepository<LineStats, LineStatsI
             Long discordServerId,
             Long lineId
     );
+
+    List<LineStats> findAllByGuildServer_DiscordServerIdAndLine_LineId(Long serverId, Long lineId);
 }
