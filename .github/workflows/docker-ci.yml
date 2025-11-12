@@ -26,11 +26,10 @@ jobs:
       - name: 🔨 Build with Gradle
         run: chmod +x gradlew && ./gradlew clean build -x test
 
-      # ⭐ 동적으로 JAR 파일 이름 추출
       - name: 🔍 Get JAR File Name
         id: jar_file
         run: |
-          JAR_NAME=$(ls build/libs/*.jar | xargs basename)
+          JAR_NAME=$(ls build/libs/*.jar | grep -v 'plain.jar' | xargs basename)
           echo "JAR_FILE_NAME=$JAR_NAME" >> $GITHUB_OUTPUT
 
       - name: 🔑 Login to Docker Hub
