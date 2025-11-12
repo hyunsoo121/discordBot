@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: lulubot-discord-app
+
+  # 1. PostgreSQL Datasource 설정
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    # 💡 host: Docker Compose 서비스 이름 'postgres' 사용
+    url: jdbc:postgresql://postgres:5432/${PG_DB}
+    username: ${PG_USER}
+    password: ${PG_PASSWORD}
+
+  # 2. JPA/Hibernate 설정
+  jpa:
+    # 💡 테이블 자동 생성 복구 (개발 단계 권장)
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: 'true'
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # 3. Redis 설정
+  data:
+    redis:
+      # 💡 host: Docker Compose 서비스 이름 'redis' 사용
+      host: redis
+      port: 6379
+      password: ${REDIS_PASSWORD}
+
+  # 4. Discord Bot 설정 (모두 환경 변수 사용)
+  discord:
+    bot:
+      token: ${DISCORD_BOT_TOKEN}
+      application_id: ${DISCORD_APPLICATION_ID}
+      public_key: ${DISCORD_PUBLIC_KEY}
+
+  # 5. API 키 설정 (모두 환경 변수 사용)
+  riot:
+    api:
+      key: ${RIOT_API_KEY}
+
+  gemini:
+    api:
+      key: ${GEMINI_API_KEY}
+
+logging:
+  level:
+    net:
+      dv8tion:
+        jda: DEBUG

@@ -1,11 +1,15 @@
 version: '3.8'
 
 services:
+  # -----------------------------------------------------------
+  # 1. PostgreSQL Database Service
+  # -----------------------------------------------------------
   postgres:
     image: postgres:15-alpine
     container_name: postgres-db
     restart: always
     environment:
+      # .env에서 가져온 변수를 Postgres 컨테이너 환경 변수로 설정
       POSTGRES_USER: ${PG_USER}
       POSTGRES_PASSWORD: ${PG_PASSWORD}
       POSTGRES_DB: ${PG_DB}
@@ -21,11 +25,13 @@ services:
       timeout: 5s
       retries: 5
 
+  # -----------------------------------------------------------
+  # 2. Redis Cache Service
+  # -----------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: redis-server
     restart: always
-    # 비밀번호 설정 (환경 변수 사용)
     command: redis-server --requirepass "${REDIS_PASSWORD}"
     ports:
       - "6379:6379"
@@ -39,31 +45,42 @@ services:
       timeout: 3s
       retries: 5
 
+  # -----------------------------------------------------------
+  # 3. Discord Bot Application Service (LuluBot)
+  # -----------------------------------------------------------
   app:
     image: ${DOCKER_USERNAME}/lulubot-discord-app:latest
     container_name: lulubot-app-container
     restart: always
+
+    # 💡 DB 연결 오류 해결을 위해 모든 필수 변수를 명시적으로 주입합니다.
+    environment:
+      # DB 및 Redis 접속 정보 (Spring Boot DataSource 설정에 필요)
+      - PG_DB
+      - PG_USER
+      - PG_PASSWORD
+      - REDIS_PASSWORD
+
+      # API 키 및 토큰 정보 (application.yml의 discord/riot/gemini 설정에 필요)
+      - DISCORD_BOT_TOKEN
+      - DISCORD_APPLICATION_ID
+      - DISCORD_PUBLIC_KEY
+      - RIOT_API_KEY
+      - GEMINI_API_KEY
+
+    networks:
+      - bot-network
+
+    # DB와 Redis가 Healthy 상태일 때만 앱이 시작되도록 보장
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
 
-    environment:
-      PG_DB: ${PG_DB}
-      PG_USER: ${PG_USER}
-      PG_PASSWORD: ${PG_PASSWORD}
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-
-      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
-      DISCORD_APPLICATION_ID: ${DISCORD_APPLICATION_ID}
-      DISCORD_PUBLIC_KEY: ${DISCORD_PUBLIC_KEY}
-      RIOT_API_KEY: ${RIOT_API_KEY}
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-
-    networks:
-      - bot-network
-
+# -----------------------------------------------------------
+# Volumes 및 Network 정의
+# -----------------------------------------------------------
 volumes:
   postgres_data:
   redis_data:
