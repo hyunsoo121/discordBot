@@ -16,7 +16,10 @@ import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.interactions.components.ActionRow;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -29,6 +32,32 @@ public class RankingHandlerImpl implements RankingHandler {
     private static final int MIN_GAMES_THRESHOLD = 1;
     private static final int ITEMS_PER_PAGE = 10;
 
+    private static final Map<String, String> LINE_ALIASES;
+
+    private static final Pattern SPECIAL_CHARS_PATTERN = Pattern.compile("[^a-zA-Z0-9가-힣]");
+
+    static {
+        LINE_ALIASES = new HashMap<>();
+
+        LINE_ALIASES.put("TOP", "TOP");
+        LINE_ALIASES.put("탑", "TOP");
+        LINE_ALIASES.put("JUNGLE", "JUNGLE");
+        LINE_ALIASES.put("JG", "JUNGLE");
+        LINE_ALIASES.put("JGL", "JUNGLE");
+        LINE_ALIASES.put("정글", "JUNGLE");
+        LINE_ALIASES.put("MID", "MID");
+        LINE_ALIASES.put("미드", "MID");
+        LINE_ALIASES.put("ADC", "ADC");
+        LINE_ALIASES.put("AD", "ADC");
+        LINE_ALIASES.put("BOT", "ADC");
+        LINE_ALIASES.put("BOTTOM", "ADC");
+        LINE_ALIASES.put("원딜", "ADC");
+        LINE_ALIASES.put("봇", "ADC");
+        LINE_ALIASES.put("SUPPORT", "SUPPORT");
+        LINE_ALIASES.put("SUP", "SUPPORT");
+        LINE_ALIASES.put("서포터", "SUPPORT");
+        LINE_ALIASES.put("서폿", "SUPPORT");
+    }
     @Override
     public void handleRankingCommand(SlashCommandInteractionEvent event) {
 
@@ -55,7 +84,6 @@ public class RankingHandlerImpl implements RankingHandler {
         ActionRow paginationRow = rankingPresenter.createPaginationButtonsRow(discordServerId, currentCriterion, currentPage, totalPages);
 
 
-        // 4. 메시지 전송
         event.getHook().sendMessageEmbeds(detailedEmbed)
                 .setComponents(sortRow1, sortRow2, paginationRow)
                 .queue();
@@ -68,17 +96,25 @@ public class RankingHandlerImpl implements RankingHandler {
         Long discordServerId = event.getGuild().getIdLong();
         String serverName = event.getGuild().getName();
 
-        String lineNameOption = event.getOption("라인이름") != null ? event.getOption("라인이름").getAsString().toUpperCase() : null;
-        if (lineNameOption == null) {
+        String rawLineOption = event.getOption("라인이름") != null ? event.getOption("라인이름").getAsString() : null;
+
+        if (rawLineOption == null) {
             event.getHook().sendMessage("❌ 오류: 라인 이름을 입력하세요. (예: TOP, JUNGLE, MID, ADC, SUPPORT)").queue();
             return;
         }
 
-        Line line = lineRepository.findByName(lineNameOption).orElse(null);
-        if (line == null) {
-            event.getHook().sendMessage("❌ 오류: 알 수 없는 라인 이름입니다: " + lineNameOption).queue();
+        String cleanedInput = SPECIAL_CHARS_PATTERN.matcher(rawLineOption)
+                .replaceAll("")
+                .toUpperCase();
+
+        String lineNameForDb = LINE_ALIASES.get(cleanedInput);
+
+        if (lineNameForDb == null) {
+            event.getHook().sendMessage("❌ 오류: 알 수 없는 라인 이름입니다: " + rawLineOption).queue();
             return;
         }
+
+        Line line = lineRepository.findByName(lineNameForDb).orElse(null);
 
         List<LineRankDto> rankedList = rankingService.getLineRanking(discordServerId, line.getLineId(), MIN_GAMES_THRESHOLD, RankingCriterion.WINRATE);
 
@@ -92,14 +128,12 @@ public class RankingHandlerImpl implements RankingHandler {
 
         MessageEmbed embed = rankingPresenter.createLineRankingEmbed(serverName, line.getDisplayName(), rankedList, topList, 1, totalPages);
 
-        // 라인 랭킹 정렬/페이지네이션 버튼 생성
-        ActionRow sortRow1 = rankingPresenter.createLineSortButtonsRow1(discordServerId, line.getLineId(), RankingCriterion.KDA);
-        ActionRow sortRow2 = rankingPresenter.createLineSortButtonsRow2(discordServerId, line.getLineId(), RankingCriterion.KDA);
-        ActionRow paginationRow = rankingPresenter.createLinePaginationButtonsRow(discordServerId, line.getLineId(), RankingCriterion.KDA, 1, totalPages);
+        ActionRow sortRow1 = rankingPresenter.createLineSortButtonsRow1(discordServerId, line.getLineId(), RankingCriterion.WINRATE);
+        ActionRow sortRow2 = rankingPresenter.createLineSortButtonsRow2(discordServerId, line.getLineId(), RankingCriterion.WINRATE);
+        ActionRow paginationRow = rankingPresenter.createLinePaginationButtonsRow(discordServerId, line.getLineId(), RankingCriterion.WINRATE, 1, totalPages);
 
-        // 버튼과 함께 메시지 전송
         event.getHook().sendMessageEmbeds(embed)
-                .setComponents(sortRow1, sortRow2, paginationRow) // ✅ 이 부분이 버튼을 추가하는 핵심입니다.
+                .setComponents(sortRow1, sortRow2, paginationRow)
                 .queue();
     }
 
@@ -108,19 +142,15 @@ public class RankingHandlerImpl implements RankingHandler {
 
         String componentId = event.getComponentId();
 
-        // 1. 정렬 버튼 이벤트 처리
         if (componentId.startsWith(RankingHandler.SORT_BUTTON_ID_PREFIX)) {
             handleSortButtonInternal(event);
 
-        // 2. 페이지네이션 버튼 이벤트 처리
         } else if (componentId.startsWith(RankingHandler.PAGINATION_BUTTON_ID_PREFIX)) {
             handlePaginationButtonInternal(event);
 
-        // 3. 라인별 정렬 버튼 이벤트 처리
         } else if (componentId.startsWith(RankingHandler.SORT_LINE_BUTTON_ID_PREFIX)) {
             handleLineSortButtonInternal(event);
 
-        // 4. 라인별 페이지네이션 버튼 이벤트 처리
         } else if (componentId.startsWith(RankingHandler.PAGINATION_LINE_BUTTON_ID_PREFIX)) {
             handleLinePaginationButtonInternal(event);
         }
@@ -221,20 +251,9 @@ public class RankingHandlerImpl implements RankingHandler {
             String[] parts = fullId.split("_");
             int length = parts.length;
 
-            // 1. 서버 ID 추출 (마지막 요소)
             Long discordServerId = Long.parseLong(parts[length - 1]);
 
-            // 2. 정렬 기준 이름 추출
-            // CRITERION은 parts[2]부터 length-2까지 모두 포함
-            StringBuilder criterionBuilder = new StringBuilder();
-            for (int i = 2; i < length - 1; i++) {
-                if (i > 2) {
-                    criterionBuilder.append("_");
-                }
-                criterionBuilder.append(parts[i]);
-            }
-            String criterionName = criterionBuilder.toString();
-
+            String criterionName = parts[2];
             RankingCriterion newCriterion = RankingCriterion.valueOf(criterionName);
             int currentPage = 1;
 
