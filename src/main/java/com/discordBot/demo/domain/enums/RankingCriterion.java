@@ -2,7 +2,7 @@ package com.discordBot.demo.domain.enums;
 
 public enum RankingCriterion {
     // 랭킹 정렬 기준
-    WIN_RATE("승률"), // 현재 기본 정렬
+    WINRATE("승률"), // 현재 기본 정렬
     KDA("KDA"),
     GAMES("총 게임 수"),
 

@@ -28,7 +28,7 @@ public class RankingServiceImpl implements RankingService {
     public List<UserRankDto> getRanking(Long serverId, int minGamesThreshold, RankingCriterion criterion) {
 
         Comparator<UserRankDto> primaryComparator = switch (criterion) {
-            case WIN_RATE -> Comparator.comparing(UserRankDto::getWinRate, Comparator.reverseOrder());
+            case WINRATE -> Comparator.comparing(UserRankDto::getWinRate, Comparator.reverseOrder());
             case KDA -> Comparator.comparing(UserRankDto::getKda, Comparator.reverseOrder());
             case GAMES -> Comparator.comparing(UserRankDto::getTotalGames, Comparator.reverseOrder());
 
@@ -64,7 +64,7 @@ public class RankingServiceImpl implements RankingService {
     public List<LineRankDto> getLineRanking(Long serverId, Long lineId, int minGamesThreshold, RankingCriterion criterion) {
 
         Comparator<LineRankDto> primaryComparator = switch (criterion) {
-            case WIN_RATE -> Comparator.comparing(LineRankDto::getWinRate, Comparator.reverseOrder());
+            case WINRATE -> Comparator.comparing(LineRankDto::getWinRate, Comparator.reverseOrder());
             case KDA -> Comparator.comparing(LineRankDto::getKda, Comparator.reverseOrder());
             case GAMES -> Comparator.comparing(LineRankDto::getTotalGames, Comparator.reverseOrder());
 

@@ -22,7 +22,7 @@ public class RankingPresenter {
     private static final int MIN_GAMES_THRESHOLD = 1;
     private static final int ITEMS_PER_PAGE = 10;
     private static final List<RankingCriterion> PRIMARY_CRITERIA = Arrays.asList(
-            RankingCriterion.WIN_RATE, RankingCriterion.KDA, RankingCriterion.GAMES
+            RankingCriterion.WINRATE, RankingCriterion.KDA, RankingCriterion.GAMES
     );
     private static final List<RankingCriterion> SECONDARY_CRITERIA = Arrays.asList(
             RankingCriterion.GPM, RankingCriterion.DPM, RankingCriterion.KP
@@ -36,7 +36,7 @@ public class RankingPresenter {
         // --- 색상 및 스타일 로직 ---
         Color embedColor;
         switch (criterion) {
-            case WIN_RATE: embedColor = new Color(0, 255, 0); break;
+            case WINRATE: embedColor = new Color(0, 255, 0); break;
             case KDA: embedColor = new Color(255, 69, 0); break;
             case GAMES: embedColor = new Color(173, 216, 230); break;
             case GPM: embedColor = new Color(255, 215, 0); break;
@@ -85,14 +85,14 @@ public class RankingPresenter {
                 embedBuilder.setDescription("🔎 총 " + allRankedList.size() + "명 | 페이지: " + currentPage + "/" + totalPages + "\n(상위 " + currentPageList.size() + "명 표시)");
 
                 StringBuilder sb = new StringBuilder();
-                sb.append("`순위 | KDA | GPM | DPM | KP | 승률 | 게임 수`\n");
+                sb.append("` 순위 | KDA | GPM | DPM | K P | 승률 | 게임 수`\n");
                 sb.append("-----------------------------------------------\n");
 
                 int startRank = (currentPage - 1) * ITEMS_PER_PAGE + 1;
                 for (int i = 0; i < currentPageList.size(); i++) {
                         com.discordBot.demo.domain.dto.LineRankDto dto = currentPageList.get(i);
                         String userMention = String.format("<@%d>", dto.getDiscordUserId());
-                        sb.append(String.format("`%3d | %4.2f | %4.0f | %4.0f | %4.0f%% | %4.0f%% | %3d` %s\n",
+                        sb.append(String.format("`%-5d|%5.2f|%5.0f|%5.0f|%4.0f%%|%4.0f%%|%4d`%s\n",
                                         startRank + i,
                                         dto.getKda(), dto.getGpm(), dto.getDpm(), dto.getKillParticipation() * 100, dto.getWinRate() * 100, dto.getTotalGames(), userMention
                         ));

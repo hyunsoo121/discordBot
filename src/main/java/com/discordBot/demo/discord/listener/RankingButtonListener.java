@@ -1,5 +1,4 @@
 package com.discordBot.demo.discord.listener;
-
 import com.discordBot.demo.discord.handler.RankingHandler;
 import lombok.RequiredArgsConstructor;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
@@ -16,10 +15,16 @@ public class RankingButtonListener extends ListenerAdapter {
     public void onButtonInteraction(ButtonInteractionEvent event) {
         String componentId = event.getComponentId();
 
-        if (componentId.startsWith(RankingHandler.SORT_BUTTON_ID_PREFIX) ||
-                componentId.startsWith(RankingHandler.PAGINATION_BUTTON_ID_PREFIX)) {
+        boolean isGeneralRankingButton = componentId.startsWith(RankingHandler.SORT_BUTTON_ID_PREFIX) ||
+                componentId.startsWith(RankingHandler.PAGINATION_BUTTON_ID_PREFIX);
+
+        boolean isLineRankingButton = componentId.startsWith(RankingHandler.SORT_LINE_BUTTON_ID_PREFIX) ||
+                componentId.startsWith(RankingHandler.PAGINATION_LINE_BUTTON_ID_PREFIX);
+
+        if (isGeneralRankingButton || isLineRankingButton) {
 
             event.deferEdit().queue();
+
             rankingHandler.handleRankingButtonInteraction(event);
         }
     }

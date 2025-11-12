@@ -36,7 +36,7 @@ public class RankingHandlerImpl implements RankingHandler {
 
         Long discordServerId = event.getGuild().getIdLong();
         String serverName = event.getGuild().getName();
-        RankingCriterion currentCriterion = RankingCriterion.WIN_RATE;
+        RankingCriterion currentCriterion = RankingCriterion.WINRATE;
         int currentPage = 1;
 
         List<UserRankDto> allRankedList = rankingService.getRanking(discordServerId, MIN_GAMES_THRESHOLD, currentCriterion);
@@ -80,17 +80,27 @@ public class RankingHandlerImpl implements RankingHandler {
             return;
         }
 
-        List<LineRankDto> rankedList = rankingService.getLineRanking(discordServerId, line.getLineId(), MIN_GAMES_THRESHOLD, RankingCriterion.WIN_RATE);
+        List<LineRankDto> rankedList = rankingService.getLineRanking(discordServerId, line.getLineId(), MIN_GAMES_THRESHOLD, RankingCriterion.WINRATE);
 
         if (rankedList.isEmpty()) {
             event.getHook().sendMessage("❌ 해당 라인에 대한 랭킹 데이터가 없습니다.").queue();
             return;
         }
 
-        // 상위 10명 표시
         List<LineRankDto> topList = rankedList.subList(0, Math.min(rankedList.size(), ITEMS_PER_PAGE));
-        MessageEmbed embed = rankingPresenter.createLineRankingEmbed(serverName, line.getDisplayName(), rankedList, topList, 1, getTotalPages(rankedList.size(), ITEMS_PER_PAGE));
-        event.getHook().sendMessageEmbeds(embed).queue();
+        int totalPages = getTotalPages(rankedList.size(), ITEMS_PER_PAGE);
+
+        MessageEmbed embed = rankingPresenter.createLineRankingEmbed(serverName, line.getDisplayName(), rankedList, topList, 1, totalPages);
+
+        // 라인 랭킹 정렬/페이지네이션 버튼 생성
+        ActionRow sortRow1 = rankingPresenter.createLineSortButtonsRow1(discordServerId, line.getLineId(), RankingCriterion.KDA);
+        ActionRow sortRow2 = rankingPresenter.createLineSortButtonsRow2(discordServerId, line.getLineId(), RankingCriterion.KDA);
+        ActionRow paginationRow = rankingPresenter.createLinePaginationButtonsRow(discordServerId, line.getLineId(), RankingCriterion.KDA, 1, totalPages);
+
+        // 버튼과 함께 메시지 전송
+        event.getHook().sendMessageEmbeds(embed)
+                .setComponents(sortRow1, sortRow2, paginationRow) // ✅ 이 부분이 버튼을 추가하는 핵심입니다.
+                .queue();
     }
 
     @Override
