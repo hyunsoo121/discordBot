@@ -7,6 +7,7 @@ import com.discordBot.demo.discord.handler.RegistrationHandler;
 import com.discordBot.demo.discord.handler.UserSearchHandler; // UserSearchHandler 주입
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.dv8tion.jda.api.events.guild.GuildJoinEvent;
 import net.dv8tion.jda.api.events.guild.GuildReadyEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
@@ -75,8 +76,7 @@ public class SlashCommandListener extends ListenerAdapter {
         }
     }
 
-    @Override
-    public void onGuildReady(GuildReadyEvent event) {
+    private List<CommandData> buildCommandDataList() {
         List<CommandData> commandDataList = new ArrayList<>();
 
         commandDataList.add(
@@ -110,6 +110,22 @@ public class SlashCommandListener extends ListenerAdapter {
                 Commands.slash("데이터초기화", "관리자 전용: 현재 서버에 테스트용 5경기 기록을 주입합니다.")
         );
 
-        event.getGuild().updateCommands().addCommands(commandDataList).queue();
+        return commandDataList;
+    }
+
+    @Override
+    public void onGuildReady(GuildReadyEvent event) {
+        log.info("기존 서버 명령어 등록 시작: {}", event.getGuild().getName());
+        event.getGuild().updateCommands().addCommands(buildCommandDataList()).queue();
+    }
+
+    @Override
+    public void onGuildJoin(GuildJoinEvent event) {
+        log.info("🎉 새로운 서버에 참가하여 명령어 등록: {} (ID: {})", event.getGuild().getName(), event.getGuild().getId());
+
+            event.getGuild().updateCommands().addCommands(buildCommandDataList()).queue(
+                success -> log.info("✅ 새로운 서버에 명령어 등록 성공: {}", event.getGuild().getName()),
+                failure -> log.error("❌ 새로운 서버에 명령어 등록 실패: {}", event.getGuild().getName(), failure)
+        );
     }
 }

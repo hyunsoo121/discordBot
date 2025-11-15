@@ -148,8 +148,6 @@ public class ImageAnalysisServiceImpl implements ImageAnalysisService {
                 preferredLaneHintList  // 6. NEW: 선호 라인 힌트 (프롬프트에 직접 전달)
         );
 
-        log.info("✉️ Gemini Combined Prompt sent:\n{}", combinedPrompt);
-
         // Gemini API 호출
         GenerateContentResponse response = callGeminiApi(combinedPrompt, imageBytes);
         String rawJsonString = extractRawJsonText(response);
